@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Purrsor Settings</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <h1 class="title">Purrsor</h1>
+      <p class="subtitle">Custom Cursor Extension</p>
+    </header>
+
+    <section class="section site-toggle">
+      <div class="toggle-row">
+        <div class="toggle-info">
+          <span class="toggle-label">Enable on this site</span>
+          <span class="site-hostname" id="currentSite">loading...</span>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="siteToggle" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">Cursor Settings</h2>
+      
+      <div class="field">
+        <label class="field-label" for="cursorDefault">Default Cursor</label>
+        <textarea 
+          id="cursorDefault" 
+          class="field-input" 
+          rows="3" 
+          placeholder="e.g., url('...') 80 80, auto"
+        ></textarea>
+        <span class="field-hint">Applied to all elements</span>
+      </div>
+
+      <div class="field">
+        <label class="field-label" for="cursorInteractive">Interactive Cursor</label>
+        <textarea 
+          id="cursorInteractive" 
+          class="field-input" 
+          rows="3" 
+          placeholder="e.g., url('...') 80 80, auto"
+        ></textarea>
+        <span class="field-hint">Applied to links, buttons, and interactive elements</span>
+      </div>
+    </section>
+
+    <section class="actions">
+      <button id="saveBtn" class="btn btn-primary">Save Changes</button>
+      <button id="resetBtn" class="btn btn-secondary">Reset to Defaults</button>
+    </section>
+
+    <div id="statusMessage" class="status-message hidden"></div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
