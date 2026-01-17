@@ -1,1 +1,1 @@
-![Purrsor](.github/purrsor.webp)
+![Purrsor](.github/purrsor.gif)
