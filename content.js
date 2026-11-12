@@ -61,9 +61,17 @@ function generateShadowCSS(cursorDefault, cursorInteractive) {
 }
 
 function press(event) {
-  if (!enabled || event.button !== 0 || event.pointerType === 'touch') return;
-  document.documentElement.setAttribute(PRESSED_ATTR, '');
+  if (!hold(event)) return;
   if (soundEnabled) playBongo();
+}
+
+// Shows the slap without the sound. Returns false when this press doesn't count.
+function hold(event) {
+  if (!enabled || event.pointerType === 'touch') return false;
+  const root = document.documentElement;
+  // Called on every move during a drag; leave pages' attribute observers quiet.
+  if (!root.hasAttribute(PRESSED_ATTR)) root.setAttribute(PRESSED_ATTR, '');
+  return true;
 }
 
 // The AudioContext is created inside the pointerdown handler, which carries
@@ -89,7 +97,25 @@ function release() {
   document.documentElement?.removeAttribute(PRESSED_ATTR);
 }
 
-window.addEventListener('pointerdown', press, true);
+// While another button is held, a left press or release fires pointermove
+// with button 0 instead of pointerdown or pointerup. A press or release in
+// another frame never reaches this one, so any other move takes the left
+// button's state from `buttons`: held means the slap, without the sound.
+function track(event) {
+  if (event.button === 0) {
+    if (event.buttons & 1) press(event);
+    else release();
+  } else if (event.buttons & 1) {
+    hold(event);
+  } else {
+    release();
+  }
+}
+
+window.addEventListener('pointerdown', (event) => {
+  if (event.button === 0) press(event);
+}, true);
+window.addEventListener('pointermove', track, true);
 window.addEventListener('pointerup', release, true);
 window.addEventListener('pointercancel', release, true);
 window.addEventListener('dragend', release, true);
