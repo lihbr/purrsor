@@ -6,7 +6,12 @@ const STYLE_ID = 'purrsor-cursor-styles';
 // Set on <html> while the primary mouse button is held.
 const PRESSED_ATTR = 'data-purrsor-pressed';
 
+const BONGO_URL = chrome.runtime.getURL('sounds/bongo.mp3');
+
 let enabled = false;
+let soundEnabled = true;
+let audioContext;
+let bongo; // Promise<AudioBuffer>, decoded on the first click
 
 // Get current hostname
 function getHostname() {
@@ -45,6 +50,26 @@ function generateCSS(cursorDefault, cursorInteractive) {
 function press(event) {
   if (!enabled || event.button !== 0 || event.pointerType === 'touch') return;
   document.documentElement.setAttribute(PRESSED_ATTR, '');
+  if (soundEnabled) playBongo();
+}
+
+// The AudioContext is created inside the pointerdown handler, which carries
+// user activation, so autoplay policy lets it start.
+function playBongo() {
+  audioContext ??= new AudioContext();
+  bongo ??= fetch(BONGO_URL)
+    .then((response) => response.arrayBuffer())
+    .then((data) => audioContext.decodeAudioData(data));
+  bongo.then(
+    (buffer) => {
+      const source = audioContext.createBufferSource();
+      source.buffer = buffer;
+      source.connect(audioContext.destination);
+      source.start();
+    },
+    // Fails when the extension was reloaded under this page; retry next click.
+    () => { bongo = undefined; }
+  );
 }
 
 function release() {
@@ -105,7 +130,8 @@ async function applyCursors() {
   }
 
   // Get cursor configurations
-  const config = await chrome.storage.local.get(['cursorDefault', 'cursorInteractive']);
+  const config = await chrome.storage.local.get(['cursorDefault', 'cursorInteractive', 'soundEnabled']);
+  soundEnabled = config.soundEnabled !== false;
   
   if (config.cursorDefault && config.cursorInteractive) {
     enabled = true;
@@ -116,7 +142,7 @@ async function applyCursors() {
 // Listen for storage changes
 chrome.storage.onChanged.addListener((changes, areaName) => {
   // React to cursor config or disabled sites changes (all stored in local)
-  if (areaName === 'local' && (changes.cursorDefault || changes.cursorInteractive || changes.disabledSites)) {
+  if (areaName === 'local' && (changes.cursorDefault || changes.cursorInteractive || changes.disabledSites || changes.soundEnabled)) {
     applyCursors();
   }
 });

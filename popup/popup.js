@@ -5,6 +5,7 @@
 const elements = {
   currentSite: document.getElementById('currentSite'),
   siteToggle: document.getElementById('siteToggle'),
+  soundToggle: document.getElementById('soundToggle'),
   cursorDefault: document.getElementById('cursorDefault'),
   cursorInteractive: document.getElementById('cursorInteractive'),
   saveBtn: document.getElementById('saveBtn'),
@@ -74,6 +75,18 @@ async function loadCursorConfig() {
   }
 }
 
+// Load the click sound setting (on unless turned off)
+async function loadSoundSetting() {
+  const { soundEnabled } = await chrome.storage.local.get('soundEnabled');
+  elements.soundToggle.checked = soundEnabled !== false;
+}
+
+async function toggleSound() {
+  const soundEnabled = elements.soundToggle.checked;
+  await chrome.storage.local.set({ soundEnabled });
+  showStatus(soundEnabled ? 'Bongo sound on' : 'Bongo sound off');
+}
+
 // Toggle site enabled/disabled
 async function toggleSite() {
   if (!currentHostname) return;
@@ -132,6 +145,7 @@ async function resetToDefaults() {
 
 // Event Listeners
 elements.siteToggle.addEventListener('change', toggleSite);
+elements.soundToggle.addEventListener('change', toggleSound);
 elements.saveBtn.addEventListener('click', saveCursorConfig);
 elements.resetBtn.addEventListener('click', resetToDefaults);
 
@@ -139,6 +153,7 @@ elements.resetBtn.addEventListener('click', resetToDefaults);
 async function init() {
   await loadCurrentSite();
   await loadCursorConfig();
+  await loadSoundSetting();
 }
 
 init();
