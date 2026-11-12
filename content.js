@@ -3,29 +3,10 @@
 
 const STYLE_ID = 'purrsor-cursor-styles';
 
-// Interactive elements selector
-const INTERACTIVE_SELECTOR = [
-  'a',
-  'button',
-  '[role="button"]',
-  '[role="link"]',
-  'input[type="button"]',
-  'input[type="submit"]',
-  'input[type="reset"]',
-  'input[type="checkbox"]',
-  'input[type="radio"]',
-  'input[type="file"]',
-  'select',
-  'textarea:not(:focus)',
-  'label[for]',
-  'summary',
-  '[onclick]',
-  '[onmousedown]',
-  '[tabindex]:not([tabindex="-1"])',
-  '[contenteditable="true"]:not(:focus)',
-  '.btn',
-  '.button'
-].join(', ');
+// Set on <html> while the primary mouse button is held.
+const PRESSED_ATTR = 'data-purrsor-pressed';
+
+let enabled = false;
 
 // Get current hostname
 function getHostname() {
@@ -42,22 +23,39 @@ function ensureImportant(value) {
   return `${trimmed} !important`;
 }
 
-// Generate CSS for cursor overrides
+// Generate CSS for cursor overrides. Every element gets the cursor directly
+// rather than inheriting it from body, because a site's own `cursor: pointer`
+// on an element beats an inherited value.
 function generateCSS(cursorDefault, cursorInteractive) {
   const defaultValue = ensureImportant(cursorDefault);
   const interactiveValue = ensureImportant(cursorInteractive);
 
   return `
 /* Purrsor - Custom Cursor Styles */
-body {
+:root, :root * {
   cursor: ${defaultValue};
 }
 
-body ${INTERACTIVE_SELECTOR} {
+:root[${PRESSED_ATTR}], :root[${PRESSED_ATTR}] * {
   cursor: ${interactiveValue};
 }
 `;
 }
+
+function press(event) {
+  if (!enabled || event.button !== 0 || event.pointerType === 'touch') return;
+  document.documentElement.setAttribute(PRESSED_ATTR, '');
+}
+
+function release() {
+  document.documentElement?.removeAttribute(PRESSED_ATTR);
+}
+
+window.addEventListener('pointerdown', press, true);
+window.addEventListener('pointerup', release, true);
+window.addEventListener('pointercancel', release, true);
+window.addEventListener('dragend', release, true);
+window.addEventListener('blur', release);
 
 // Inject or update styles
 function injectStyles(cursorDefault, cursorInteractive) {
@@ -100,6 +98,8 @@ async function applyCursors() {
   const disabled = await isSiteDisabled();
   
   if (disabled) {
+    enabled = false;
+    release();
     removeStyles();
     return;
   }
@@ -108,6 +108,7 @@ async function applyCursors() {
   const config = await chrome.storage.local.get(['cursorDefault', 'cursorInteractive']);
   
   if (config.cursorDefault && config.cursorInteractive) {
+    enabled = true;
     injectStyles(config.cursorDefault, config.cursorInteractive);
   }
 }
