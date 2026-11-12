@@ -1,7 +1,5 @@
 // Purrsor - Content Script
-// Injects custom cursor styles into web pages
-
-const STYLE_ID = 'purrsor-cursor-styles';
+// Asks the service worker to insert the cursor styles into this document
 
 // Set on <html> while the primary mouse button is held.
 const PRESSED_ATTR = 'data-purrsor-pressed';
@@ -9,6 +7,7 @@ const PRESSED_ATTR = 'data-purrsor-pressed';
 const BONGO_URL = chrome.runtime.getURL('sounds/bongo.mp3');
 
 let enabled = false;
+let insertedCss = null;
 let soundEnabled = true;
 let audioContext;
 let bongo; // Promise<AudioBuffer>, decoded on the first click
@@ -43,6 +42,20 @@ function generateCSS(cursorDefault, cursorInteractive) {
 
 :root[${PRESSED_ATTR}], :root[${PRESSED_ATTR}] * {
   cursor: ${interactiveValue};
+}
+`;
+}
+
+// The same rules for inside shadow roots, which the document's stylesheet
+// doesn't reach. :host-context() sees the pressed attribute on <html>.
+function generateShadowCSS(cursorDefault, cursorInteractive) {
+  return `
+* {
+  cursor: ${ensureImportant(cursorDefault)};
+}
+
+:host-context([${PRESSED_ATTR}]) * {
+  cursor: ${ensureImportant(cursorInteractive)};
 }
 `;
 }
@@ -82,32 +95,80 @@ window.addEventListener('pointercancel', release, true);
 window.addEventListener('dragend', release, true);
 window.addEventListener('blur', release);
 
-// Inject or update styles
-function injectStyles(cursorDefault, cursorInteractive) {
-  let styleElement = document.getElementById(STYLE_ID);
+// The service worker inserts the CSS with chrome.scripting.insertCSS as a
+// user-origin stylesheet. User !important beats every author rule, including a
+// site's own !important, and the sheet lives outside the DOM, so a page that
+// rewrites <head> cannot remove it. `css` is null to remove the styles.
+function setStyles(css) {
+  if (css === insertedCss) return;
+  const previous = insertedCss;
+  insertedCss = css;
+  chrome.runtime.sendMessage({ action: 'setCursorCss', css, previous });
+}
 
-  if (!styleElement) {
-    styleElement = document.createElement('style');
-    styleElement.id = STYLE_ID;
-    styleElement.setAttribute('type', 'text/css');
-    
-    // Insert at the end of head or document for highest specificity
-    const target = document.head || document.documentElement;
-    if (target) {
-      target.appendChild(styleElement);
+// Chromium doesn't apply user stylesheets inside shadow roots, so every shadow
+// root also adopts shadowSheet. chrome.dom reaches closed roots as well.
+const shadowSheet = new CSSStyleSheet();
+const shadowRoots = new WeakSet();
+let watchingShadowRoots = false;
+
+const shadowObserver = new MutationObserver((records) => {
+  for (const record of records) {
+    for (const node of record.addedNodes) {
+      if (node.nodeType === Node.ELEMENT_NODE) findShadowRoots(node);
     }
   }
+});
 
-  styleElement.textContent = generateCSS(cursorDefault, cursorInteractive);
+// el.shadowRoot sees open roots only. chrome.dom sees closed ones too but costs
+// about 50 times more per call, so scans ask it only about custom elements,
+// which host nearly every closed root. The pointerover check covers the rest.
+function scannedShadowRoot(el) {
+  if (el.shadowRoot) return el.shadowRoot;
+  if (el.localName.includes('-') && el instanceof HTMLElement) {
+    return chrome.dom.openOrClosedShadowRoot(el);
+  }
+  return null;
 }
 
-// Remove injected styles
-function removeStyles() {
-  const styleElement = document.getElementById(STYLE_ID);
-  if (styleElement) {
-    styleElement.remove();
+function findShadowRoots(node) {
+  const walker = document.createTreeWalker(node, NodeFilter.SHOW_ELEMENT);
+  for (let el = walker.currentNode; el; el = walker.nextNode()) {
+    if (el.nodeType === Node.ELEMENT_NODE) adoptShadowRoot(scannedShadowRoot(el));
   }
 }
+
+function adoptShadowRoot(root) {
+  if (!root) return;
+  // Checked every time: a component can replace its adoptedStyleSheets.
+  if (!root.adoptedStyleSheets.includes(shadowSheet)) {
+    root.adoptedStyleSheets = [...root.adoptedStyleSheets, shadowSheet];
+  }
+  if (shadowRoots.has(root)) return;
+  shadowRoots.add(root);
+  shadowObserver.observe(root, { childList: true, subtree: true });
+  findShadowRoots(root);
+}
+
+function watchShadowRoots() {
+  if (watchingShadowRoots) return;
+  watchingShadowRoots = true;
+  shadowObserver.observe(document, { childList: true, subtree: true });
+  findShadowRoots(document);
+  // A custom element defined after the parser created it attaches its shadow
+  // root without a DOM mutation, so look again once parsing is done.
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => findShadowRoots(document), { once: true });
+  }
+}
+
+// Catches a shadow root attached later still, when the pointer first enters it.
+window.addEventListener('pointerover', (event) => {
+  if (!watchingShadowRoots) return;
+  for (const node of event.composedPath()) {
+    if (node instanceof HTMLElement) adoptShadowRoot(chrome.dom.openOrClosedShadowRoot(node));
+  }
+}, true);
 
 // Check if current site is disabled
 async function isSiteDisabled() {
@@ -125,7 +186,8 @@ async function applyCursors() {
   if (disabled) {
     enabled = false;
     release();
-    removeStyles();
+    setStyles(null);
+    shadowSheet.replaceSync('');
     return;
   }
 
@@ -135,7 +197,9 @@ async function applyCursors() {
   
   if (config.cursorDefault && config.cursorInteractive) {
     enabled = true;
-    injectStyles(config.cursorDefault, config.cursorInteractive);
+    setStyles(generateCSS(config.cursorDefault, config.cursorInteractive));
+    shadowSheet.replaceSync(generateShadowCSS(config.cursorDefault, config.cursorInteractive));
+    watchShadowRoots();
   }
 }
 
@@ -149,8 +213,3 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 
 // Initial application
 applyCursors();
-
-// Re-apply when DOM is ready (in case document_start was too early)
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', applyCursors);
-}

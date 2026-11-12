@@ -5,7 +5,8 @@
   "description": "Customize your cursor with adorable alternatives across all websites",
   "permissions": [
     "storage",
-    "activeTab"
+    "activeTab",
+    "scripting"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -31,7 +32,8 @@
       "matches": ["<all_urls>"],
       "js": ["content.js"],
       "run_at": "document_start",
-      "all_frames": true
+      "all_frames": true,
+      "match_origin_as_fallback": true
     }
   ],
   "web_accessible_resources": [

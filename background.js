@@ -29,8 +29,28 @@ chrome.runtime.onInstalled.addListener(async (details) => {
   }
 });
 
+// Insertions and removals run one at a time, in the order content scripts
+// sent them, so a removal never overtakes the insertion it undoes.
+let cssQueue = Promise.resolve();
+
+function setCursorCss({ css, previous }, sender) {
+  const target = { tabId: sender.tab.id, documentIds: [sender.documentId] };
+  cssQueue = cssQueue
+    .then(async () => {
+      if (previous) await chrome.scripting.removeCSS({ target, css: previous, origin: 'USER' });
+      if (css) await chrome.scripting.insertCSS({ target, css, origin: 'USER' });
+    })
+    // The document can be gone by now (navigation, closed tab). Nothing to style.
+    .catch(() => {});
+}
+
 // Listen for messages from popup or content scripts
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === 'setCursorCss') {
+    setCursorCss(message, sender);
+    return false;
+  }
+
   if (message.action === 'getDefaults') {
     loadDefaults().then(defaults => {
       sendResponse(defaults);
