@@ -1,33 +1,48 @@
 // Purrsor - Background Service Worker
 // Handles extension initialization and default configuration
 
-// Load default cursor values from default.json
-async function loadDefaults() {
-  const response = await fetch(chrome.runtime.getURL('default.json'));
-  const defaults = await response.json();
-  return defaults;
+importScripts('shared/templates.js');
+
+// Cursor values that Purrsor 1.0.0 stored on install, as SHA-256 hashes.
+// Anyone still on them gets Bongo Cat's current images on update.
+const V1_DEFAULT_CURSORS = [
+  'bec956bad0b30f4c3e95b93687f7cfca45b85d62fe38ec3975d84b1c83e8e8e0',
+  '7ad1404ee5648413d03aa4b1cd189704596751a1bd95e435fba7e9765f91b1ca',
+];
+
+async function sha256(text) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-// Initialize extension on install
-chrome.runtime.onInstalled.addListener(async (details) => {
-  if (details.reason === 'install') {
-    // Load defaults from JSON file
-    const defaults = await loadDefaults();
-    
-    // Set default cursor configurations (using local storage due to sync's 8KB per-item limit)
-    await chrome.storage.local.set({
-      cursorDefault: defaults.default,
-      cursorInteractive: defaults.interactive
-    });
+// True when the stored cursors are ones the person typed in 1.0.0's popup.
+async function hasOwnCursorCss({ cursorDefault, cursorInteractive }, builtin) {
+  if (!cursorDefault || !cursorInteractive) return false;
+  if (cursorDefault === builtin.cursorDefault && cursorInteractive === builtin.cursorInteractive) return false;
+  const hashes = await Promise.all([sha256(cursorDefault.trim()), sha256(cursorInteractive.trim())]);
+  return hashes.join() !== V1_DEFAULT_CURSORS.join();
+}
 
-    // Initialize empty disabled sites list
-    await chrome.storage.local.set({
-      disabledSites: []
-    });
+async function setUp({ reason }) {
+  if (reason !== 'install' && reason !== 'update') return;
+  const builtin = await loadBuiltinTemplate();
+  const stored = await chrome.storage.local.get(['templateId', 'cursorDefault', 'cursorInteractive', 'disabledSites']);
 
-    console.log('Purrsor: Extension installed with default cursors');
+  if (reason === 'install') {
+    await chrome.storage.local.set({ disabledSites: [] });
+    await useTemplate(builtin);
+  } else if (stored.templateId === undefined && await hasOwnCursorCss(stored, builtin)) {
+    // Updated from 1.0.0 with cursor CSS of their own: keep it.
+    const customCursor = { cursorDefault: stored.cursorDefault, cursorInteractive: stored.cursorInteractive };
+    await chrome.storage.local.set({ customCursor });
+    await useTemplate({ id: CUSTOM_CSS_ID, ...customCursor });
+  } else if (stored.templateId === undefined || stored.templateId === BUILTIN_ID) {
+    // Bongo Cat's images can change between versions.
+    await useTemplate(builtin);
   }
-});
+}
+
+chrome.runtime.onInstalled.addListener(setUp);
 
 // Insertions and removals run one at a time, in the order content scripts
 // sent them, so a removal never overtakes the insertion it undoes.
@@ -44,35 +59,46 @@ function setCursorCss({ css, previous }, sender) {
     .catch(() => {});
 }
 
-// Listen for messages from popup or content scripts
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.action === 'setCursorCss') {
-    setCursorCss(message, sender);
-    return false;
-  }
-
-  if (message.action === 'getDefaults') {
-    loadDefaults().then(defaults => {
-      sendResponse(defaults);
-    });
-    return true; // Keep channel open for async response
-  }
-  
+  if (message.action === 'setCursorCss') setCursorCss(message, sender);
   if (message.action === 'resetToDefaults') {
-    loadDefaults().then(async (defaults) => {
-      await chrome.storage.local.set({
-        cursorDefault: defaults.default,
-        cursorInteractive: defaults.interactive
-      });
-      sendResponse({ success: true });
-    });
+    loadBuiltinTemplate().then(useTemplate).then(() => sendResponse({ success: true }));
     return true;
   }
 });
 
-// Update badge when site is disabled
+// Each shortcut flips a setting that is on unless stored as false. Presses run
+// one at a time, so two quick ones never read the same value and cancel out
+// to a single flip.
+const COMMAND_SETTINGS = { 'toggle-enabled': 'enabled', 'toggle-sound': 'soundEnabled' };
+let toggles = Promise.resolve();
+
+chrome.commands.onCommand.addListener((command) => {
+  const key = COMMAND_SETTINGS[command];
+  if (!key) return;
+  toggles = toggles.then(async () => {
+    const { [key]: value } = await chrome.storage.local.get(key);
+    await chrome.storage.local.set({ [key]: value === false });
+  });
+});
+
+// The toolbar icon is the only feedback a shortcut press gets: grey while
+// Purrsor is off, and a "mute" badge while it is on without sound.
+const ICON_SIZES = [16, 48, 128];
+
+function showState({ enabled, soundEnabled }) {
+  const off = enabled === false;
+  chrome.action.setIcon({
+    path: Object.fromEntries(ICON_SIZES.map((size) => [size, `icons/icon${size}${off ? '-off' : ''}.png`])),
+  });
+  chrome.action.setBadgeText({ text: !off && soundEnabled === false ? 'mute' : '' });
+}
+
+chrome.action.setBadgeBackgroundColor({ color: '#1f1d1a' });
+chrome.storage.local.get(['enabled', 'soundEnabled']).then(showState);
+
 chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName === 'local' && changes.disabledSites) {
-    // Could update badge here if needed
+  if (areaName === 'local' && (changes.enabled || changes.soundEnabled)) {
+    chrome.storage.local.get(['enabled', 'soundEnabled']).then(showState);
   }
 });

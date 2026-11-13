@@ -9,8 +9,9 @@ const BONGO_URL = chrome.runtime.getURL('sounds/bongo.mp3');
 let enabled = false;
 let insertedCss = null;
 let soundEnabled = true;
+let templateId;
 let audioContext;
-let bongo; // Promise<AudioBuffer>, decoded on the first click
+let clickSound; // Promise<AudioBuffer>, decoded on the first click
 
 // Get current hostname
 function getHostname() {
@@ -62,7 +63,7 @@ function generateShadowCSS(cursorDefault, cursorInteractive) {
 
 function press(event) {
   if (!hold(event)) return;
-  if (soundEnabled) playBongo();
+  if (soundEnabled) playClickSound();
 }
 
 // Shows the slap without the sound. Returns false when this press doesn't count.
@@ -74,14 +75,21 @@ function hold(event) {
   return true;
 }
 
+// The template's own sound, or the bongo when it has none.
+async function loadClickSound() {
+  const key = `sound:${templateId}`;
+  const { [key]: sound } = await chrome.storage.local.get(key);
+  if (sound) return Uint8Array.from(atob(sound.data), (c) => c.charCodeAt(0)).buffer;
+  const response = await fetch(BONGO_URL);
+  return response.arrayBuffer();
+}
+
 // The AudioContext is created inside the pointerdown handler, which carries
 // user activation, so autoplay policy lets it start.
-function playBongo() {
+function playClickSound() {
   audioContext ??= new AudioContext();
-  bongo ??= fetch(BONGO_URL)
-    .then((response) => response.arrayBuffer())
-    .then((data) => audioContext.decodeAudioData(data));
-  bongo.then(
+  clickSound ??= loadClickSound().then((data) => audioContext.decodeAudioData(data));
+  clickSound.then(
     (buffer) => {
       const source = audioContext.createBufferSource();
       source.buffer = buffer;
@@ -89,7 +97,7 @@ function playBongo() {
       source.start();
     },
     // Fails when the extension was reloaded under this page; retry next click.
-    () => { bongo = undefined; }
+    () => { clickSound = undefined; }
   );
 }
 
@@ -206,10 +214,9 @@ async function isSiteDisabled() {
 
 // Load and apply cursor styles
 async function applyCursors() {
-  // Check if site is disabled
-  const disabled = await isSiteDisabled();
-  
-  if (disabled) {
+  const { enabled: enabledEverywhere } = await chrome.storage.local.get('enabled');
+
+  if (enabledEverywhere === false || await isSiteDisabled()) {
     enabled = false;
     release();
     setStyles(null);
@@ -218,8 +225,12 @@ async function applyCursors() {
   }
 
   // Get cursor configurations
-  const config = await chrome.storage.local.get(['cursorDefault', 'cursorInteractive', 'soundEnabled']);
+  const config = await chrome.storage.local.get(['cursorDefault', 'cursorInteractive', 'soundEnabled', 'templateId']);
   soundEnabled = config.soundEnabled !== false;
+  if (config.templateId !== templateId) {
+    templateId = config.templateId;
+    clickSound = undefined;
+  }
   
   if (config.cursorDefault && config.cursorInteractive) {
     enabled = true;
@@ -229,12 +240,13 @@ async function applyCursors() {
   }
 }
 
-// Listen for storage changes
+const SETTINGS = ['enabled', 'cursorDefault', 'cursorInteractive', 'disabledSites', 'soundEnabled', 'templateId'];
+
 chrome.storage.onChanged.addListener((changes, areaName) => {
-  // React to cursor config or disabled sites changes (all stored in local)
-  if (areaName === 'local' && (changes.cursorDefault || changes.cursorInteractive || changes.disabledSites || changes.soundEnabled)) {
-    applyCursors();
-  }
+  if (areaName !== 'local') return;
+  // The template in use got a new sound, or lost it.
+  if (changes[`sound:${templateId}`]) clickSound = undefined;
+  if (SETTINGS.some((key) => changes[key])) applyCursors();
 });
 
 // Initial application
