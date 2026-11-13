@@ -59,12 +59,8 @@ function setCursorCss({ css, previous }, sender) {
     .catch(() => {});
 }
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, sender) => {
   if (message.action === 'setCursorCss') setCursorCss(message, sender);
-  if (message.action === 'resetToDefaults') {
-    loadBuiltinTemplate().then(useTemplate).then(() => sendResponse({ success: true }));
-    return true;
-  }
 });
 
 // Each shortcut flips a setting that is on unless stored as false. Presses run

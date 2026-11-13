@@ -1,0 +1,246 @@
+/* Purrsor - the look shared by the popup and the Settings page.
+   Bongo Cat is ink lines on white paper with pink paw pads, so the
+   controls are too. */
+
+:root {
+  --paper: #f8f5ef;
+  --surface: #fff;
+  --ink: #1f1d1a;
+  --ink-soft: #5c574f;
+  --ink-faint: #8b857b;
+  --line: rgb(31 29 26 / 0.12);
+  --line-strong: rgb(31 29 26 / 0.22);
+  --pad: #f2a7b6;
+  --pad-tint: #fdebef;
+  --danger: #b42318;
+  --focus: #1f1d1a;
+
+  --radius-l: 16px;
+  --radius-m: 10px;
+  --radius-s: 6px;
+
+  --raised:
+    0 0 0 1px rgb(31 29 26 / 0.07),
+    0 1px 2px rgb(31 29 26 / 0.05),
+    0 4px 12px -4px rgb(31 29 26 / 0.08);
+
+  --font: ui-rounded, "SF Pro Rounded", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+}
+
+body {
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--ink);
+  background: var(--paper);
+  -webkit-font-smoothing: antialiased;
+}
+
+img {
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Switch: a real checkbox drawn as an inked track. */
+.switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 40px;
+  height: 24px;
+}
+
+.switch input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 1;
+}
+
+.switch input:disabled {
+  cursor: default;
+}
+
+.switch-track {
+  position: absolute;
+  inset: 0;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--surface);
+  transition: background-color 150ms ease-out;
+  pointer-events: none;
+}
+
+.switch-track::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--ink);
+  transition: transform 150ms ease-out, background-color 150ms ease-out;
+}
+
+.switch input:checked + .switch-track {
+  background: var(--ink);
+}
+
+.switch input:checked + .switch-track::before {
+  background: var(--pad);
+  transform: translateX(16px);
+}
+
+.switch input:focus-visible + .switch-track {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.switch input:disabled + .switch-track {
+  border-color: var(--ink-faint);
+  background: var(--paper);
+}
+
+.switch input:disabled + .switch-track::before {
+  background: var(--ink-faint);
+}
+
+.switch.large {
+  width: 52px;
+  height: 30px;
+}
+
+.switch.large .switch-track::before {
+  width: 22px;
+  height: 22px;
+}
+
+.switch.large input:checked + .switch-track::before {
+  transform: translateX(22px);
+}
+
+/* Buttons */
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 14px;
+  font: inherit;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--surface);
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-m);
+  cursor: pointer;
+  transition: background-color 150ms ease-out, transform 100ms ease-out;
+}
+
+.button:hover {
+  background: var(--pad-tint);
+}
+
+.button:active {
+  transform: scale(0.96);
+}
+
+.button.primary {
+  color: var(--surface);
+  background: var(--ink);
+}
+
+.button.primary:hover {
+  background: color-mix(in oklch, var(--ink) 85%, white);
+}
+
+.button.small {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+.button:disabled {
+  color: var(--ink-faint);
+  border-color: var(--line-strong);
+  background: var(--paper);
+  cursor: default;
+  transform: none;
+}
+
+.text-button {
+  font: inherit;
+  font-weight: 600;
+  color: var(--ink-soft);
+  background: none;
+  border: 0;
+  padding: 4px 2px;
+  border-radius: var(--radius-s);
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 3px;
+  transition: color 150ms ease-out, text-decoration-color 150ms ease-out;
+}
+
+.text-button:hover {
+  color: var(--ink);
+  text-decoration-color: currentColor;
+}
+
+.text-button.danger {
+  color: var(--danger);
+}
+
+kbd {
+  display: inline-block;
+  min-width: 22px;
+  padding: 1px 6px;
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-bottom-width: 2px;
+  border-radius: var(--radius-s);
+}
+
+kbd.unset {
+  font-weight: 500;
+  color: var(--ink-faint);
+  border-style: dashed;
+  border-bottom-width: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before {
+    transition-duration: 0s !important;
+  }
+}

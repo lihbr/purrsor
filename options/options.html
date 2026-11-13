@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Purrsor settings</title>
+  <link rel="stylesheet" href="../shared/theme.css">
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <main class="page">
+    <header class="page-head">
+      <img class="page-cat" id="headCat" alt="" width="84" height="57">
+      <h1>Purrsor settings</h1>
+    </header>
+
+    <section class="section" aria-labelledby="switchesTitle">
+      <h2 id="switchesTitle">Switches</h2>
+      <div class="panel">
+        <div class="row">
+          <div class="row-text">
+            <label class="row-label" for="enabledToggle">Purrsor</label>
+            <span class="row-detail" id="enabledDetail">On for every site you haven't turned it off for</span>
+          </div>
+          <kbd class="row-keys" id="enabledKeys"></kbd>
+          <label class="switch">
+            <input type="checkbox" id="enabledToggle" aria-describedby="enabledDetail" checked>
+            <span class="switch-track"></span>
+          </label>
+        </div>
+        <div class="row">
+          <div class="row-text">
+            <label class="row-label" for="soundToggle">Sound</label>
+            <span class="row-detail" id="soundDetail">Plays on every click</span>
+          </div>
+          <kbd class="row-keys" id="soundKeys"></kbd>
+          <label class="switch">
+            <input type="checkbox" id="soundToggle" aria-describedby="soundDetail" checked>
+            <span class="switch-track"></span>
+          </label>
+        </div>
+      </div>
+      <p class="note">
+        Shortcuts live on your browser's own page.
+        <button type="button" class="text-button" id="changeShortcuts">Change shortcuts</button>
+      </p>
+    </section>
+
+    <section class="section" id="cursors" aria-labelledby="cursorsTitle">
+      <h2 id="cursorsTitle">Cursors</h2>
+      <div class="gallery" id="gallery"></div>
+    </section>
+
+    <section class="section" aria-labelledby="sitesTitle">
+      <h2 id="sitesTitle">Sites where it’s off</h2>
+      <div class="panel">
+        <ul class="sites" id="sites"></ul>
+        <p class="sites-empty" id="sitesEmpty">Purrsor runs on every site. To turn it off on one, open Purrsor from the toolbar while you're there.</p>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="advancedTitle">
+      <details class="advanced">
+        <summary><h2 id="advancedTitle">Cursor CSS</h2></summary>
+        <p class="section-intro">For a cursor that isn't a picture upload. Each value is a CSS <code>cursor</code>, such as <code>url('cat.png') 38 28, auto</code>.</p>
+        <form class="panel css-form" id="cssForm">
+          <div class="field">
+            <label for="cssDefault">Cursor</label>
+            <textarea id="cssDefault" rows="3" spellcheck="false" required></textarea>
+          </div>
+          <div class="field">
+            <label for="cssInteractive">While the button is held</label>
+            <textarea id="cssInteractive" rows="3" spellcheck="false" required></textarea>
+          </div>
+          <div class="form-actions">
+            <span class="form-status" id="cssStatus" role="status"></span>
+            <button type="submit" class="button primary">Save and use</button>
+          </div>
+        </form>
+      </details>
+    </section>
+
+    <footer class="page-foot">
+      <button type="button" class="text-button" id="manageExtension">Manage extension</button>
+    </footer>
+  </main>
+
+  <template id="cardTemplate">
+    <article class="card">
+      <div class="card-art"><img alt="" width="112" height="76"></div>
+      <div class="card-body">
+        <h3 class="card-name"></h3>
+        <p class="card-detail"></p>
+      </div>
+      <div class="card-actions"></div>
+    </article>
+  </template>
+
+  <dialog class="editor" id="editor" aria-labelledby="editorTitle">
+    <form method="dialog" id="editorForm" novalidate>
+      <header class="editor-head">
+        <h2 id="editorTitle">New cursor</h2>
+        <button type="button" class="text-button" id="editorClose">Cancel</button>
+      </header>
+
+      <div class="editor-body">
+        <div class="editor-fields">
+          <div class="field">
+            <label for="nameInput">Name</label>
+            <input type="text" id="nameInput" maxlength="40" autocomplete="off" required>
+          </div>
+
+          <fieldset class="field">
+            <legend>Pictures</legend>
+            <div class="uploads">
+              <div class="upload" id="idleUpload">
+                <div class="upload-art"><img alt="" hidden></div>
+                <span class="upload-label">Cursor</span>
+                <label class="button small upload-button">
+                  <span>Choose</span>
+                  <input type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" class="visually-hidden" id="idleFile">
+                </label>
+              </div>
+              <div class="upload" id="slapUpload">
+                <div class="upload-art"><img alt="" hidden></div>
+                <span class="upload-label">On click <span class="optional">optional</span></span>
+                <label class="button small upload-button">
+                  <span>Choose</span>
+                  <input type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" class="visually-hidden" id="slapFile">
+                </label>
+              </div>
+            </div>
+            <p class="hint" id="picturesHint">PNG with a transparent background works best. Use two pictures the same size so they line up.</p>
+          </fieldset>
+
+          <fieldset class="field">
+            <legend>Size</legend>
+            <div class="segmented" id="sizeChoice">
+              <label><input type="radio" name="size" value="48"><span>Small</span></label>
+              <label><input type="radio" name="size" value="80"><span>Medium</span></label>
+              <label><input type="radio" name="size" value="112" checked><span>Large</span></label>
+            </div>
+          </fieldset>
+
+          <fieldset class="field">
+            <legend>Sound <span class="optional">optional</span></legend>
+            <div class="sound">
+              <span class="sound-name" id="soundName">Bongo</span>
+              <button type="button" class="button small" id="soundPlay">Play</button>
+              <label class="button small">
+                <span>Choose</span>
+                <input type="file" accept="audio/*" class="visually-hidden" id="soundFile">
+              </label>
+              <button type="button" class="text-button" id="soundRemove" hidden>Use the bongo</button>
+            </div>
+            <p class="hint">MP3, WAV or OGG, up to 3 seconds and 1 MB.</p>
+          </fieldset>
+        </div>
+
+        <div class="editor-preview">
+          <div class="field">
+            <span class="label" id="hotspotLabel">Click point</span>
+            <div class="hotspot" id="hotspot" tabindex="0" role="group" aria-labelledby="hotspotLabel" aria-describedby="hotspotHint hotspotReadout">
+              <span class="hotspot-frame" id="hotspotFrame">
+                <img id="hotspotImage" alt="">
+                <span class="hotspot-mark" id="hotspotMark" aria-hidden="true"></span>
+              </span>
+              <span class="hotspot-empty" id="hotspotEmpty">Choose a cursor picture first</span>
+            </div>
+            <p class="hint"><span id="hotspotHint">Click where the click should land. Arrow keys nudge it.</span> <output id="hotspotReadout" aria-live="polite"></output></p>
+          </div>
+          <div class="field">
+            <span class="label" id="tryLabel">Try it</span>
+            <div class="try" id="tryPad">
+              <span>Move here and click</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <footer class="editor-foot">
+        <button type="button" class="text-button danger" id="deleteTemplate" hidden>Delete cursor</button>
+        <p class="form-error" id="editorError" role="alert"></p>
+        <button type="submit" class="button primary" id="saveTemplate">Save and use</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <script src="../shared/templates.js"></script>
+  <script src="../shared/pages.js"></script>
+  <script src="files.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>
