@@ -6,9 +6,10 @@ const local = chrome.storage.local;
 // Switches and shortcuts
 
 async function showSwitches() {
-  const { enabled, soundEnabled } = await getSwitches();
+  const { enabled, soundEnabled, slapEnabled } = await getSwitches();
   $('enabledToggle').checked = enabled;
   $('soundToggle').checked = soundEnabled;
+  $('slapToggle').checked = slapEnabled;
   $('enabledDetail').textContent = enabled
     ? "On for every site you haven't turned it off for"
     : 'Off everywhere. No cursor and no sound.';
@@ -25,6 +26,9 @@ async function showShortcuts() {
 
 $('enabledToggle').addEventListener('change', (event) => local.set({ enabled: event.target.checked }));
 $('soundToggle').addEventListener('change', (event) => local.set({ soundEnabled: event.target.checked }));
+$('slapToggle').addEventListener('change', (event) => local.set({ slapEnabled: event.target.checked }));
+$('slapDetail').textContent = `${SLAP_KEYS.click} knocks the things around the cat out of the way, and ${SLAP_KEYS.undo} puts back the last slap. `
+  + `While it's on, ${SLAP_KEYS.click} doesn't download links.`;
 $('changeShortcuts').addEventListener('click', openShortcutsPage);
 $('manageExtension').addEventListener('click', openManagePage);
 
@@ -397,7 +401,7 @@ $('editorForm').addEventListener('submit', async (event) => {
 // Keep up with the popup, shortcuts and other Settings tabs.
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== 'local') return;
-  if (changes.enabled || changes.soundEnabled) showSwitches();
+  if (changes.enabled || changes.soundEnabled || changes.slapEnabled) showSwitches();
   if (changes.templates || changes.templateId || changes.customCursor) showGallery();
   if (changes.disabledSites) showSites();
   for (const key of Object.keys(changes)) {

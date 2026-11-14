@@ -6,8 +6,10 @@ const popup = $('popup');
 const enabledToggle = $('enabledToggle');
 const siteToggle = $('siteToggle');
 const soundToggle = $('soundToggle');
+const slapToggle = $('slapToggle');
 
 let hostname = '';
+let shortcuts = {};
 let templates = [];
 let templateId = BUILTIN_ID;
 
@@ -20,6 +22,7 @@ function showEnabled(enabled) {
   popup.classList.toggle('off', !enabled);
   siteToggle.disabled = !enabled || !hostname;
   soundToggle.disabled = !enabled;
+  slapToggle.disabled = !enabled;
   $('status').textContent = enabled ? 'On' : 'Off everywhere';
   showStageCursor(false);
 }
@@ -43,10 +46,14 @@ async function loadSite() {
   siteToggle.checked = !disabledSites.includes(hostname);
 }
 
-async function loadSound() {
-  const shortcuts = await getShortcuts();
-  const keys = shortcuts['toggle-sound'];
-  $('soundDetail').textContent = keys ? `Plays on every click · ${keys}` : 'Plays on every click';
+function withKeys(text, command) {
+  return shortcuts[command] ? `${text} · ${shortcuts[command]}` : text;
+}
+
+async function loadShortcuts() {
+  shortcuts = await getShortcuts();
+  $('soundDetail').textContent = withKeys('Plays on every click', 'toggle-sound');
+  $('slapDetail').textContent = `${SLAP_KEYS.click} knocks things away · ${SLAP_KEYS.undo} undoes`;
 }
 
 // The stage wears the cursor itself, so pointing at it shows the real thing.
@@ -143,6 +150,10 @@ soundToggle.addEventListener('change', () => {
   chrome.storage.local.set({ soundEnabled: soundToggle.checked });
 });
 
+slapToggle.addEventListener('change', () => {
+  chrome.storage.local.set({ slapEnabled: slapToggle.checked });
+});
+
 function openSettings(hash = '') {
   chrome.tabs.create({ url: chrome.runtime.getURL(`options/options.html${hash}`) });
   window.close();
@@ -160,6 +171,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== 'local') return;
   if (changes.enabled) showEnabled(changes.enabled.newValue !== false);
   if (changes.soundEnabled) soundToggle.checked = changes.soundEnabled.newValue !== false;
+  if (changes.slapEnabled) slapToggle.checked = changes.slapEnabled.newValue !== false;
   if (changes.templates || changes.templateId || changes.customCursor) loadTemplates();
   for (const key of Object.keys(changes)) {
     if (key.startsWith('sound:')) forgetTemplateSound(key.slice('sound:'.length));
@@ -167,8 +179,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 });
 
 async function init() {
-  const [switches] = await Promise.all([getSwitches(), loadSite(), loadTemplates(), loadSound()]);
+  const [switches] = await Promise.all([getSwitches(), loadSite(), loadTemplates(), loadShortcuts()]);
   soundToggle.checked = switches.soundEnabled;
+  slapToggle.checked = switches.slapEnabled;
   showEnabled(switches.enabled);
 }
 

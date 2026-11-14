@@ -26,7 +26,7 @@ async function hasOwnCursorCss({ cursorDefault, cursorInteractive }, builtin) {
 async function setUp({ reason }) {
   if (reason !== 'install' && reason !== 'update') return;
   const builtin = await loadBuiltinTemplate();
-  const stored = await chrome.storage.local.get(['templateId', 'cursorDefault', 'cursorInteractive', 'disabledSites']);
+  const stored = await chrome.storage.local.get(['templateId', 'cursorDefault', 'cursorInteractive', 'cursorWindup', 'disabledSites']);
 
   if (reason === 'install') {
     await chrome.storage.local.set({ disabledSites: [] });
@@ -39,6 +39,9 @@ async function setUp({ reason }) {
   } else if (stored.templateId === undefined || stored.templateId === BUILTIN_ID) {
     // Bongo Cat's images can change between versions.
     await useTemplate(builtin);
+  } else if (stored.cursorWindup === undefined) {
+    // A template chosen before the wind-up cursor existed.
+    await chrome.storage.local.set({ cursorWindup: await windupCursor(stored.cursorDefault).catch(() => '') });
   }
 }
 
@@ -59,8 +62,48 @@ function setCursorCss({ css, previous }, sender) {
     .catch(() => {});
 }
 
+// Option-Z takes back the last slap in a tab, whichever frame it landed in.
+// Each frame keeps its own pushes; this keeps the order of the frames slapped,
+// per tab, in session storage so it outlives the service worker going idle.
+// Frames keep their last 20 slaps, so the list keeps as many.
+const SLAP_HISTORY = 20;
+let slapQueue = Promise.resolve();
+
+function slapHistory(tabId, change) {
+  const key = `slaps:${tabId}`;
+  slapQueue = slapQueue
+    .then(async () => {
+      const { [key]: frames = [] } = await chrome.storage.session.get(key);
+      await change(frames);
+      await chrome.storage.session.set({ [key]: frames.slice(-SLAP_HISTORY) });
+    })
+    .catch(() => {});
+}
+
+function recordSlap(tabId, frameId) {
+  slapHistory(tabId, (frames) => frames.push(frameId));
+}
+
+function undoSlap(tabId) {
+  slapHistory(tabId, async (frames) => {
+    // A frame that has reloaded since has nothing to take back; the one
+    // before it might.
+    while (frames.length) {
+      const undone = await chrome.tabs.sendMessage(tabId, { action: 'unslap' }, { frameId: frames.pop() })
+        .catch(() => false);
+      if (undone) break;
+    }
+  });
+}
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  chrome.storage.session.remove(`slaps:${tabId}`);
+});
+
 chrome.runtime.onMessage.addListener((message, sender) => {
   if (message.action === 'setCursorCss') setCursorCss(message, sender);
+  if (message.action === 'slapped') recordSlap(sender.tab.id, sender.frameId);
+  if (message.action === 'unslap') undoSlap(sender.tab.id);
 });
 
 // Each shortcut flips a setting that is on unless stored as false. Presses run

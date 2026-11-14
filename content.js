@@ -3,6 +3,8 @@
 
 // Set on <html> while the primary mouse button is held.
 const PRESSED_ATTR = 'data-purrsor-pressed';
+// Set on <html> while Option (Alt) is held over the page, ready to slap.
+const WINDUP_ATTR = 'data-purrsor-windup';
 
 const BONGO_URL = chrome.runtime.getURL('sounds/bongo.mp3');
 
@@ -12,6 +14,7 @@ let soundEnabled = true;
 let templateId;
 let audioContext;
 let clickSound; // Promise<AudioBuffer>, decoded on the first click
+let slapEnabled = true;
 
 // Get current hostname
 function getHostname() {
@@ -31,16 +34,22 @@ function ensureImportant(value) {
 // Generate CSS for cursor overrides. Every element gets the cursor directly
 // rather than inheriting it from body, because a site's own `cursor: pointer`
 // on an element beats an inherited value.
-function generateCSS(cursorDefault, cursorInteractive) {
+// The pressed rule comes last, so a click while winding up shows the slap.
+function generateCSS(cursorDefault, cursorInteractive, cursorWindup) {
   const defaultValue = ensureImportant(cursorDefault);
   const interactiveValue = ensureImportant(cursorInteractive);
+  const windupRule = cursorWindup ? `
+:root[${WINDUP_ATTR}], :root[${WINDUP_ATTR}] * {
+  cursor: ${ensureImportant(cursorWindup)};
+}
+` : '';
 
   return `
 /* Purrsor - Custom Cursor Styles */
 :root, :root * {
   cursor: ${defaultValue};
 }
-
+${windupRule}
 :root[${PRESSED_ATTR}], :root[${PRESSED_ATTR}] * {
   cursor: ${interactiveValue};
 }
@@ -49,12 +58,17 @@ function generateCSS(cursorDefault, cursorInteractive) {
 
 // The same rules for inside shadow roots, which the document's stylesheet
 // doesn't reach. :host-context() sees the pressed attribute on <html>.
-function generateShadowCSS(cursorDefault, cursorInteractive) {
+function generateShadowCSS(cursorDefault, cursorInteractive, cursorWindup) {
+  const windupRule = cursorWindup ? `
+:host-context([${WINDUP_ATTR}]) * {
+  cursor: ${ensureImportant(cursorWindup)};
+}
+` : '';
   return `
 * {
   cursor: ${ensureImportant(cursorDefault)};
 }
-
+${windupRule}
 :host-context([${PRESSED_ATTR}]) * {
   cursor: ${ensureImportant(cursorInteractive)};
 }
@@ -121,13 +135,110 @@ function track(event) {
 }
 
 window.addEventListener('pointerdown', (event) => {
-  if (event.button === 0) press(event);
+  if (event.button !== 0) return;
+  // A new press starts a new click, even if the last slap's release never came.
+  unmute();
+  press(event);
+  if (!canSlap(event)) return;
+  swallow(event);
+  muteClick();
+  windUp(false);
+  if (Slap.at(event.clientX, event.clientY)) chrome.runtime.sendMessage({ action: 'slapped' });
 }, true);
 window.addEventListener('pointermove', track, true);
 window.addEventListener('pointerup', release, true);
 window.addEventListener('pointercancel', release, true);
 window.addEventListener('dragend', release, true);
 window.addEventListener('blur', release);
+
+function isEditable(target) {
+  return Boolean(target?.isContentEditable) || /^(INPUT|TEXTAREA|SELECT)$/.test(target?.tagName ?? '');
+}
+
+// Option-click (Alt-click) slaps, except in text fields, where editors use it
+// for things like extra cursors.
+function canSlap(event) {
+  return enabled && slapEnabled && event.altKey && event.isTrusted
+    && event.pointerType !== 'touch' && !isEditable(event.composedPath()[0]);
+}
+
+function swallow(event) {
+  event.preventDefault();
+  event.stopImmediatePropagation();
+}
+
+// The page sees nothing of a click that slaps: no focus, selection, drag,
+// button or link, which Option-click would otherwise download. The rest of
+// the click arrives right after pointerup, in the same task.
+let muted = false;
+let muteTimer = 0;
+
+function muteClick() {
+  muted = true;
+  clearTimeout(muteTimer);
+  muteTimer = setTimeout(unmute, 10000);
+}
+
+function unmute() {
+  muted = false;
+  clearTimeout(muteTimer);
+}
+
+for (const type of ['pointerup', 'mousedown', 'mouseup', 'click', 'dblclick', 'auxclick', 'selectstart', 'dragstart']) {
+  window.addEventListener(type, (event) => {
+    if (!muted) return;
+    swallow(event);
+    if (type === 'pointerup') {
+      clearTimeout(muteTimer);
+      muteTimer = setTimeout(unmute);
+    }
+  }, true);
+}
+
+// While Option is held over the page, the cat leans back to wind up.
+let pointerHere = false;
+let pointerTarget = null;
+
+function windUp(on) {
+  const root = document.documentElement;
+  if (!root) return;
+  if (!on || !enabled || !slapEnabled || isEditable(pointerTarget)) {
+    root.removeAttribute(WINDUP_ATTR);
+    return;
+  }
+  if (!root.hasAttribute(WINDUP_ATTR)) root.setAttribute(WINDUP_ATTR, '');
+}
+
+window.addEventListener('pointermove', (event) => {
+  pointerHere = true;
+  pointerTarget = event.composedPath()[0];
+  windUp(event.altKey);
+}, true);
+
+window.addEventListener('pointerout', (event) => {
+  if (!event.relatedTarget) pointerHere = false;
+}, true);
+
+window.addEventListener('keydown', (event) => {
+  if (!event.isTrusted) return;
+  if (event.key === 'Alt') windUp(pointerHere);
+  // Option-Z takes back the last slap in this tab, in whichever frame it was.
+  if (event.code === 'KeyZ' && event.altKey && !event.metaKey && !event.ctrlKey
+    && enabled && slapEnabled && !isEditable(event.composedPath()[0])) {
+    swallow(event);
+    chrome.runtime.sendMessage({ action: 'unslap' });
+  }
+}, true);
+
+window.addEventListener('keyup', (event) => {
+  if (event.key === 'Alt') windUp(false);
+}, true);
+
+window.addEventListener('blur', () => windUp(false));
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === 'unslap') sendResponse(Slap.undo());
+});
 
 // The service worker inserts the CSS with chrome.scripting.insertCSS as a
 // user-origin stylesheet. User !important beats every author rule, including a
@@ -219,14 +330,21 @@ async function applyCursors() {
   if (enabledEverywhere === false || await isSiteDisabled()) {
     enabled = false;
     release();
+    windUp(false);
+    Slap.restoreAll();
     setStyles(null);
     shadowSheet.replaceSync('');
     return;
   }
 
   // Get cursor configurations
-  const config = await chrome.storage.local.get(['cursorDefault', 'cursorInteractive', 'soundEnabled', 'templateId']);
+  const config = await chrome.storage.local.get(['cursorDefault', 'cursorInteractive', 'cursorWindup', 'soundEnabled', 'slapEnabled', 'templateId']);
   soundEnabled = config.soundEnabled !== false;
+  slapEnabled = config.slapEnabled !== false;
+  if (!slapEnabled) {
+    windUp(false);
+    Slap.restoreAll();
+  }
   if (config.templateId !== templateId) {
     templateId = config.templateId;
     clickSound = undefined;
@@ -234,13 +352,14 @@ async function applyCursors() {
   
   if (config.cursorDefault && config.cursorInteractive) {
     enabled = true;
-    setStyles(generateCSS(config.cursorDefault, config.cursorInteractive));
-    shadowSheet.replaceSync(generateShadowCSS(config.cursorDefault, config.cursorInteractive));
+    const { cursorDefault, cursorInteractive, cursorWindup } = config;
+    setStyles(generateCSS(cursorDefault, cursorInteractive, cursorWindup));
+    shadowSheet.replaceSync(generateShadowCSS(cursorDefault, cursorInteractive, cursorWindup));
     watchShadowRoots();
   }
 }
 
-const SETTINGS = ['enabled', 'cursorDefault', 'cursorInteractive', 'disabledSites', 'soundEnabled', 'templateId'];
+const SETTINGS = ['enabled', 'cursorDefault', 'cursorInteractive', 'cursorWindup', 'disabledSites', 'soundEnabled', 'slapEnabled', 'templateId'];
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== 'local') return;

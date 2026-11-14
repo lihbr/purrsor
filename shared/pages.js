@@ -19,9 +19,13 @@ function openManagePage() {
 
 // Settings that are on unless stored as false.
 async function getSwitches() {
-  const { enabled, soundEnabled } = await chrome.storage.local.get(['enabled', 'soundEnabled']);
-  return { enabled: enabled !== false, soundEnabled: soundEnabled !== false };
+  const { enabled, soundEnabled, slapEnabled } = await chrome.storage.local.get(['enabled', 'soundEnabled', 'slapEnabled']);
+  return { enabled: enabled !== false, soundEnabled: soundEnabled !== false, slapEnabled: slapEnabled !== false };
 }
+
+// The slap's keys as the keyboard labels them: Option on a Mac, Alt elsewhere.
+const IS_MAC = /mac/i.test(navigator.userAgentData?.platform ?? navigator.platform);
+const SLAP_KEYS = IS_MAC ? { click: '⌥-click', undo: '⌥Z' } : { click: 'Alt-click', undo: 'Alt+Z' };
 
 // Plays a template's click sound, or the bongo, from a click in an extension page.
 let pageAudio;
