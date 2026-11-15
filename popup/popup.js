@@ -1,144 +1,188 @@
-// Purrsor Popup Script
-// Handles UI interactions and storage management
+// Purrsor - popup: the quick switches and the cursor picker. Making and
+// editing cursors happens in Settings, where a file picker can stay open.
 
-// DOM Elements
-const elements = {
-  currentSite: document.getElementById('currentSite'),
-  siteToggle: document.getElementById('siteToggle'),
-  cursorDefault: document.getElementById('cursorDefault'),
-  cursorInteractive: document.getElementById('cursorInteractive'),
-  saveBtn: document.getElementById('saveBtn'),
-  resetBtn: document.getElementById('resetBtn'),
-  statusMessage: document.getElementById('statusMessage')
-};
+const $ = (id) => document.getElementById(id);
+const popup = $('popup');
+const enabledToggle = $('enabledToggle');
+const siteToggle = $('siteToggle');
+const soundToggle = $('soundToggle');
+const slapToggle = $('slapToggle');
 
-// Current tab hostname
-let currentHostname = '';
+let hostname = '';
+let shortcuts = {};
+let templates = [];
+let templateId = BUILTIN_ID;
 
-// Show status message
-function showStatus(message, type = 'success') {
-  elements.statusMessage.textContent = message;
-  elements.statusMessage.className = `status-message ${type}`;
-  
-  setTimeout(() => {
-    elements.statusMessage.classList.add('hidden');
-  }, 3000);
+function currentTemplate() {
+  return templates.find((template) => template.id === templateId) || templates[0];
 }
 
-// Get current tab info
-async function getCurrentTab() {
+function showEnabled(enabled) {
+  enabledToggle.checked = enabled;
+  popup.classList.toggle('off', !enabled);
+  siteToggle.disabled = !enabled || !hostname;
+  soundToggle.disabled = !enabled;
+  slapToggle.disabled = !enabled;
+  $('status').textContent = enabled ? 'On' : 'Off everywhere';
+  showStageCursor(false);
+}
+
+async function loadSite() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  return tab;
-}
-
-// Extract hostname from URL
-function getHostnameFromUrl(url) {
   try {
-    const urlObj = new URL(url);
-    return urlObj.hostname;
-  } catch {
-    return '';
-  }
-}
-
-// Load current hostname and check if disabled
-async function loadCurrentSite() {
-  const tab = await getCurrentTab();
-  
-  if (tab && tab.url) {
-    currentHostname = getHostnameFromUrl(tab.url);
-    elements.currentSite.textContent = currentHostname || 'N/A';
-    
-    // Check if site is disabled
-    const result = await chrome.storage.local.get('disabledSites');
-    const disabledSites = result.disabledSites || [];
-    const isEnabled = !disabledSites.includes(currentHostname);
-    
-    elements.siteToggle.checked = isEnabled;
-  } else {
-    elements.currentSite.textContent = 'N/A';
-    elements.siteToggle.disabled = true;
-  }
-}
-
-// Load cursor configurations
-async function loadCursorConfig() {
-  const config = await chrome.storage.local.get(['cursorDefault', 'cursorInteractive']);
-  
-  if (config.cursorDefault) {
-    elements.cursorDefault.value = config.cursorDefault;
-  }
-  
-  if (config.cursorInteractive) {
-    elements.cursorInteractive.value = config.cursorInteractive;
-  }
-}
-
-// Toggle site enabled/disabled
-async function toggleSite() {
-  if (!currentHostname) return;
-  
-  const result = await chrome.storage.local.get('disabledSites');
-  let disabledSites = result.disabledSites || [];
-  
-  if (elements.siteToggle.checked) {
-    // Enable site - remove from disabled list
-    disabledSites = disabledSites.filter(site => site !== currentHostname);
-    showStatus(`Enabled on ${currentHostname}`);
-  } else {
-    // Disable site - add to disabled list
-    if (!disabledSites.includes(currentHostname)) {
-      disabledSites.push(currentHostname);
+    const url = new URL(tab.url);
+    if (url.protocol === 'http:' || url.protocol === 'https:' || url.protocol === 'file:') {
+      hostname = url.hostname;
     }
-    showStatus(`Disabled on ${currentHostname}`);
+  } catch {
+    // No URL: a page Purrsor can't see.
   }
-  
-  await chrome.storage.local.set({ disabledSites });
-}
-
-// Save cursor configurations
-async function saveCursorConfig() {
-  const cursorDefault = elements.cursorDefault.value.trim();
-  const cursorInteractive = elements.cursorInteractive.value.trim();
-  
-  if (!cursorDefault || !cursorInteractive) {
-    showStatus('Please fill in both cursor values', 'error');
+  if (!hostname) {
+    $('currentSite').textContent = 'Not available on this page';
     return;
   }
-  
-  await chrome.storage.local.set({
-    cursorDefault,
-    cursorInteractive
-  });
-  
-  showStatus('Settings saved successfully!');
+  $('currentSite').textContent = hostname;
+  const { disabledSites = [] } = await chrome.storage.local.get('disabledSites');
+  siteToggle.checked = !disabledSites.includes(hostname);
 }
 
-// Reset to default values
-async function resetToDefaults() {
-  try {
-    const response = await chrome.runtime.sendMessage({ action: 'resetToDefaults' });
-    
-    if (response && response.success) {
-      // Reload the config to show updated values
-      await loadCursorConfig();
-      showStatus('Reset to defaults!');
-    }
-  } catch (error) {
-    showStatus('Failed to reset defaults', 'error');
-    console.error('Reset error:', error);
+function withKeys(text, command) {
+  return shortcuts[command] ? `${text} · ${shortcuts[command]}` : text;
+}
+
+async function loadShortcuts() {
+  shortcuts = await getShortcuts();
+  $('soundDetail').textContent = withKeys('Plays on every click', 'toggle-sound');
+  $('slapDetail').textContent = `${SLAP_KEYS.click} knocks things away · ${SLAP_KEYS.undo} undoes`;
+}
+
+// The stage wears the cursor itself, so pointing at it shows the real thing.
+function showStageCursor(pressed) {
+  const template = currentTemplate();
+  const cursor = pressed ? template?.cursorInteractive : template?.cursorDefault;
+  $('stage').style.cursor = enabledToggle.checked && cursor ? cursor : '';
+}
+
+function showStage() {
+  const template = currentTemplate();
+  if (!template) return;
+  showStageCursor(false);
+  $('stageIdle').src = template.idle;
+  $('stageSlap').src = template.slap || template.idle;
+  $('stage').classList.toggle('no-picture', !template.idle);
+}
+
+// Cursor CSS without a picture in it gets a label instead.
+function showArt(box, src) {
+  const image = box.querySelector('img');
+  image.hidden = !src;
+  if (src) image.src = src;
+  box.classList.toggle('no-picture', !src);
+}
+
+function renderTiles() {
+  const group = $('tiles');
+  group.replaceChildren(...templates.map((template) => {
+    const tile = $('tileTemplate').content.firstElementChild.cloneNode(true);
+    const input = tile.querySelector('input');
+    input.value = template.id;
+    input.checked = template.id === templateId;
+    input.addEventListener('change', () => pick(template));
+    showArt(tile.querySelector('.tile-art'), template.idle);
+    tile.querySelector('.tile-name').textContent = template.name;
+    tile.title = template.name;
+    return tile;
+  }));
+}
+
+async function loadTemplates() {
+  [templates, { templateId = BUILTIN_ID }] = await Promise.all([
+    listTemplates(),
+    chrome.storage.local.get('templateId'),
+  ]);
+  renderTiles();
+  showStage();
+}
+
+async function pick(template) {
+  templateId = template.id;
+  showStage();
+  await useTemplate(template);
+}
+
+// Press the cat: the click image while held, and the sound if it is on.
+function pressStage() {
+  showStageCursor(true);
+  $('stageIdle').hidden = true;
+  $('stageSlap').hidden = false;
+  if (soundToggle.checked && enabledToggle.checked) playTemplateSound(templateId);
+}
+
+function releaseStage() {
+  showStageCursor(false);
+  $('stageIdle').hidden = false;
+  $('stageSlap').hidden = true;
+}
+
+const stage = $('stage');
+stage.addEventListener('pointerdown', (event) => {
+  if (event.button === 0) pressStage();
+});
+stage.addEventListener('pointerup', releaseStage);
+stage.addEventListener('pointerleave', releaseStage);
+stage.addEventListener('keydown', (event) => {
+  if ((event.key === ' ' || event.key === 'Enter') && !event.repeat) pressStage();
+});
+stage.addEventListener('keyup', releaseStage);
+
+enabledToggle.addEventListener('change', () => {
+  showEnabled(enabledToggle.checked);
+  chrome.storage.local.set({ enabled: enabledToggle.checked });
+});
+
+siteToggle.addEventListener('change', async () => {
+  const { disabledSites = [] } = await chrome.storage.local.get('disabledSites');
+  const others = disabledSites.filter((site) => site !== hostname);
+  await chrome.storage.local.set({ disabledSites: siteToggle.checked ? others : [...others, hostname] });
+});
+
+soundToggle.addEventListener('change', () => {
+  chrome.storage.local.set({ soundEnabled: soundToggle.checked });
+});
+
+slapToggle.addEventListener('change', () => {
+  chrome.storage.local.set({ slapEnabled: slapToggle.checked });
+});
+
+function openSettings(hash = '') {
+  chrome.tabs.create({ url: chrome.runtime.getURL(`options/options.html${hash}`) });
+  window.close();
+}
+
+$('newCursor').addEventListener('click', () => openSettings('#new'));
+$('openSettings').addEventListener('click', () => {
+  chrome.runtime.openOptionsPage();
+  window.close();
+});
+$('manageExtension').addEventListener('click', openManagePage);
+
+// Shortcuts and Settings can change things while the popup is open.
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== 'local') return;
+  if (changes.enabled) showEnabled(changes.enabled.newValue !== false);
+  if (changes.soundEnabled) soundToggle.checked = changes.soundEnabled.newValue !== false;
+  if (changes.slapEnabled) slapToggle.checked = changes.slapEnabled.newValue !== false;
+  if (changes.templates || changes.templateId || changes.customCursor) loadTemplates();
+  for (const key of Object.keys(changes)) {
+    if (key.startsWith('sound:')) forgetTemplateSound(key.slice('sound:'.length));
   }
-}
+});
 
-// Event Listeners
-elements.siteToggle.addEventListener('change', toggleSite);
-elements.saveBtn.addEventListener('click', saveCursorConfig);
-elements.resetBtn.addEventListener('click', resetToDefaults);
-
-// Initialize popup
 async function init() {
-  await loadCurrentSite();
-  await loadCursorConfig();
+  const [switches] = await Promise.all([getSwitches(), loadSite(), loadTemplates(), loadShortcuts()]);
+  soundToggle.checked = switches.soundEnabled;
+  slapToggle.checked = switches.slapEnabled;
+  showEnabled(switches.enabled);
 }
 
 init();

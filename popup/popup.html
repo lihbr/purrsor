@@ -2,64 +2,92 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Purrsor Settings</title>
+  <title>Purrsor</title>
+  <link rel="stylesheet" href="../shared/theme.css">
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <div class="container">
-    <header class="header">
-      <h1 class="title">Purrsor</h1>
-      <p class="subtitle">Custom Cursor Extension</p>
+  <main class="popup" id="popup">
+    <header class="topbar">
+      <div>
+        <h1 class="wordmark">Purrsor</h1>
+        <p class="status" id="status" aria-live="polite">On</p>
+      </div>
+      <label class="switch large">
+        <input type="checkbox" id="enabledToggle" aria-label="Purrsor" aria-describedby="status" checked>
+        <span class="switch-track"></span>
+      </label>
     </header>
 
-    <section class="section site-toggle">
-      <div class="toggle-row">
-        <div class="toggle-info">
-          <span class="toggle-label">Enable on this site</span>
-          <span class="site-hostname" id="currentSite">loading...</span>
+    <button type="button" class="stage" id="stage" aria-describedby="stageHint">
+      <span class="stage-cat">
+        <img id="stageIdle" alt="" width="112" height="76">
+        <img id="stageSlap" alt="" width="112" height="76" hidden>
+      </span>
+      <span class="stage-desk"></span>
+      <span class="stage-hint" id="stageHint">Click to try it</span>
+    </button>
+
+    <section class="rows" aria-label="Switches">
+      <div class="row">
+        <div class="row-text">
+          <label class="row-label" for="siteToggle">On this site</label>
+          <span class="row-detail" id="currentSite">…</span>
         </div>
         <label class="switch">
-          <input type="checkbox" id="siteToggle" checked>
-          <span class="slider"></span>
+          <input type="checkbox" id="siteToggle" aria-describedby="currentSite" checked>
+          <span class="switch-track"></span>
+        </label>
+      </div>
+      <div class="row">
+        <div class="row-text">
+          <label class="row-label" for="soundToggle">Sound</label>
+          <span class="row-detail" id="soundDetail">Plays on every click</span>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="soundToggle" aria-describedby="soundDetail" checked>
+          <span class="switch-track"></span>
+        </label>
+      </div>
+      <div class="row">
+        <div class="row-text">
+          <label class="row-label" for="slapToggle">Slap</label>
+          <span class="row-detail" id="slapDetail">Option-click knocks things away</span>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="slapToggle" aria-describedby="slapDetail" checked>
+          <span class="switch-track"></span>
         </label>
       </div>
     </section>
 
-    <section class="section">
-      <h2 class="section-title">Cursor Settings</h2>
-      
-      <div class="field">
-        <label class="field-label" for="cursorDefault">Default Cursor</label>
-        <textarea 
-          id="cursorDefault" 
-          class="field-input" 
-          rows="3" 
-          placeholder="e.g., url('...') 80 80, auto"
-        ></textarea>
-        <span class="field-hint">Applied to all elements</span>
-      </div>
-
-      <div class="field">
-        <label class="field-label" for="cursorInteractive">Interactive Cursor</label>
-        <textarea 
-          id="cursorInteractive" 
-          class="field-input" 
-          rows="3" 
-          placeholder="e.g., url('...') 80 80, auto"
-        ></textarea>
-        <span class="field-hint">Applied to links, buttons, and interactive elements</span>
+    <section class="cursors" aria-labelledby="cursorsTitle">
+      <h2 class="cursors-title" id="cursorsTitle">Cursor</h2>
+      <div class="tiles">
+        <div class="tile-group" id="tiles" role="radiogroup" aria-labelledby="cursorsTitle"></div>
+        <button type="button" class="tile tile-new" id="newCursor">
+          <span class="tile-art" aria-hidden="true">+</span>
+          <span class="tile-name">New</span>
+        </button>
       </div>
     </section>
 
-    <section class="actions">
-      <button id="saveBtn" class="btn btn-primary">Save Changes</button>
-      <button id="resetBtn" class="btn btn-secondary">Reset to Defaults</button>
-    </section>
+    <footer class="footer">
+      <button type="button" class="text-button" id="openSettings">Settings</button>
+      <button type="button" class="text-button" id="manageExtension">Manage extension</button>
+    </footer>
+  </main>
 
-    <div id="statusMessage" class="status-message hidden"></div>
-  </div>
+  <template id="tileTemplate">
+    <label class="tile">
+      <input type="radio" name="template" class="visually-hidden">
+      <span class="tile-art"><img alt="" width="64" height="44"></span>
+      <span class="tile-name"></span>
+    </label>
+  </template>
 
+  <script src="../shared/templates.js"></script>
+  <script src="../shared/pages.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>
