@@ -110,8 +110,8 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  min-height: 56px;
-  padding: 8px 14px;
+  min-height: 50px;
+  padding: 6px 14px;
 }
 
 .row + .row {

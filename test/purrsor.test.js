@@ -115,16 +115,22 @@ test('turning Purrsor off in the popup gives pages their own cursor back', async
 });
 
 test('the cursor only carries a smaller copy while Shrink near edges is on', async (t) => {
-  const { settings, page, assertPointer } = await open(t);
+  const { context, origin, settings, page, assertPointer } = await open(t);
+  const popup = await context.newPage();
+  await popup.goto(`${origin}/popup/popup.html`);
   const copies = () => page.locator('#text').evaluate((node) => getComputedStyle(node).cursor.split('url(').length - 1);
 
   await assertPointer(page.locator('#text'), 'paws up');
   assert.equal(await copies(), 2);
 
-  await settings.getByLabel('Shrink near edges').uncheck();
+  await popup.getByLabel('Shrink near edges').uncheck();
   await eventually(async () => await copies() === 1);
   assert.equal(await copies(), 1);
   await assertPointer(page.locator('#text'), 'paws up');
+
+  await settings.getByLabel('Shrink near edges').check();
+  await eventually(async () => await copies() === 2);
+  assert.equal(await copies(), 2);
 });
 
 test('a cursor made from pictures in Settings shows on pages', async (t) => {

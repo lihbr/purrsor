@@ -40,6 +40,7 @@ async function show() {
   $('siteToggle').checked = !stored.disabledSites?.includes(hostname);
   $('soundToggle').disabled = !enabled;
   $('slapToggle').disabled = !enabled;
+  $('shrinkToggle').disabled = !enabled;
 
   const idle = template.idle;
   stage.classList.toggle('no-picture', !idle);
