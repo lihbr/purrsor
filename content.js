@@ -64,9 +64,11 @@ function trackButton(event) {
   if (pressed && event.button === 0 && settings.soundEnabled !== false) playSound(settings.templateId);
 }
 
-for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'dragend', 'blur']) {
+for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'dragend']) {
   window.addEventListener(type, trackButton, true);
 }
+// Not capturing: that would also hear the element a click takes focus from.
+window.addEventListener('blur', trackButton);
 
 function isEditable(target) {
   return Boolean(target?.isContentEditable) || /^(INPUT|TEXTAREA|SELECT)$/.test(target?.tagName ?? '');

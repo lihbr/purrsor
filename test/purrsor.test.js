@@ -46,10 +46,11 @@ async function open(t) {
 
   // Asserts what the pointer shows over an element: one of the cat's pictures
   // by name, or a CSS cursor when it isn't the cat. `inside` names a global
-  // holding an element Playwright can't reach, in a closed shadow root.
-  const assertPointer = async (target, expected, inside) => {
+  // holding an element Playwright can't reach, in a closed shadow root. `still`
+  // leaves the mouse where it is.
+  const assertPointer = async (target, expected, { inside, still } = {}) => {
     let seen;
-    await target.hover();
+    if (!still) await target.hover();
     await eventually(async () => {
       const cursor = await target.evaluate((node, name) => getComputedStyle(name ? window[name] : node).cursor, inside);
       const stored = await settings.evaluate(() => chrome.storage.local.get());
@@ -71,14 +72,19 @@ test('the cat puts one paw down over clickable things and both while the button 
   await assertPointer(page.locator('#link'), 'one paw down');
   await assertPointer(page.locator('#button'), 'one paw down');
   await assertPointer(page.locator('open-widget button'), 'one paw down');
-  await assertPointer(page.locator('closed-widget'), 'one paw down', 'closedButton');
+  await assertPointer(page.locator('closed-widget'), 'one paw down', { inside: 'closedButton' });
   await assertPointer(frameLink, 'one paw down');
 
   await page.mouse.down();
-  await assertPointer(page.locator('closed-widget'), 'both paws down', 'closedButton');
+  await assertPointer(page.locator('closed-widget'), 'both paws down', { inside: 'closedButton' });
   await assertPointer(frameLink, 'both paws down');
   await page.mouse.up();
   await assertPointer(frameLink, 'one paw down');
+
+  await page.locator('#button').focus();
+  await assertPointer(page.locator('#text'), 'paws up');
+  await page.mouse.down();
+  await assertPointer(page.locator('#text'), 'both paws down', { still: true });
 });
 
 test('a click plays a sound unless Sound is off', async (t) => {
