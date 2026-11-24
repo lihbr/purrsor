@@ -65,18 +65,16 @@ chrome.commands.onCommand.addListener((command) => {
   });
 });
 
-// The toolbar icon is the only feedback a shortcut press gets.
+// The toolbar icon is the only feedback the on/off shortcut gets.
 async function showState() {
-  const { enabled, soundEnabled } = await chrome.storage.local.get(['enabled', 'soundEnabled']);
+  const { enabled } = await chrome.storage.local.get('enabled');
   const off = enabled === false ? '-off' : '';
   chrome.action.setIcon({ path: { 16: `icons/icon16${off}.png`, 48: `icons/icon48${off}.png`, 128: `icons/icon128${off}.png` } });
-  chrome.action.setBadgeText({ text: !off && soundEnabled === false ? 'mute' : '' });
 }
 
-chrome.action.setBadgeBackgroundColor({ color: '#1f1d1a' });
 showState();
 
 chrome.storage.onChanged.addListener((changes) => {
-  if (changes.enabled || changes.soundEnabled) showState();
+  if (changes.enabled) showState();
   if (changes.shrinkEnabled) useCurrentTemplate();
 });
