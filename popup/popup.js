@@ -1,144 +1,94 @@
-// Purrsor Popup Script
-// Handles UI interactions and storage management
+// Purrsor - popup: the quick switches and the cursor picker.
 
-// DOM Elements
-const elements = {
-  currentSite: document.getElementById('currentSite'),
-  siteToggle: document.getElementById('siteToggle'),
-  cursorDefault: document.getElementById('cursorDefault'),
-  cursorInteractive: document.getElementById('cursorInteractive'),
-  saveBtn: document.getElementById('saveBtn'),
-  resetBtn: document.getElementById('resetBtn'),
-  statusMessage: document.getElementById('statusMessage')
-};
+const stage = $('stage');
+let hostname = '';
+let template = BUILTIN;
+let cursors = {};
 
-// Current tab hostname
-let currentHostname = '';
-
-// Show status message
-function showStatus(message, type = 'success') {
-  elements.statusMessage.textContent = message;
-  elements.statusMessage.className = `status-message ${type}`;
-  
-  setTimeout(() => {
-    elements.statusMessage.classList.add('hidden');
-  }, 3000);
+function pressStage(pressed) {
+  const enabled = $('enabledToggle').checked;
+  // The stage wears the cursor itself, and it is something to click.
+  stage.style.cursor = (enabled && (pressed ? cursors.cursorClick : cursors.cursorInteractive)) || '';
+  $('stageIdle').hidden = pressed;
+  $('stageClick').hidden = !pressed;
+  if (pressed && enabled && $('soundToggle').checked) playSound(template.id);
 }
 
-// Get current tab info
-async function getCurrentTab() {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  return tab;
+stage.addEventListener('pointerdown', (event) => {
+  if (event.button === 0) pressStage(true);
+});
+stage.addEventListener('keydown', (event) => {
+  if ((event.key === ' ' || event.key === 'Enter') && !event.repeat) pressStage(true);
+});
+for (const type of ['pointerup', 'pointerleave', 'keyup']) {
+  stage.addEventListener(type, () => pressStage(false));
 }
 
-// Extract hostname from URL
-function getHostnameFromUrl(url) {
-  try {
-    const urlObj = new URL(url);
-    return urlObj.hostname;
-  } catch {
-    return '';
-  }
+async function show() {
+  const [templates, stored] = await Promise.all([
+    listTemplates(),
+    chrome.storage.local.get(['templateId', 'disabledSites', 'cursorInteractive', 'cursorClick']),
+    showSwitches(),
+  ]);
+  cursors = stored;
+  template = templates.find((other) => other.id === stored.templateId) || BUILTIN;
+
+  const enabled = $('enabledToggle').checked;
+  $('popup').classList.toggle('off', !enabled);
+  $('status').textContent = enabled ? 'On' : 'Off everywhere';
+  $('siteToggle').disabled = !enabled || !hostname;
+  $('siteToggle').checked = !stored.disabledSites?.includes(hostname);
+  $('soundToggle').disabled = !enabled;
+  $('slapToggle').disabled = !enabled;
+  $('shrinkToggle').disabled = !enabled;
+
+  const idle = template.idle;
+  stage.classList.toggle('no-picture', !idle);
+  $('stageIdle').src = idle;
+  $('stageClick').src = template.click || template.hover || idle;
+  pressStage(false);
+
+  $('tiles').replaceChildren(...templates.map((other) => {
+    const tile = $('tileTemplate').content.firstElementChild.cloneNode(true);
+    const input = tile.querySelector('input');
+    input.checked = other.id === template.id;
+    input.addEventListener('change', () => useTemplate(other));
+    tile.querySelector('.tile-art').classList.toggle('no-picture', !other.idle);
+    tile.querySelector('img').src = other.idle;
+    tile.querySelector('.tile-name').textContent = other.name;
+    tile.title = other.name;
+    return tile;
+  }));
 }
 
-// Load current hostname and check if disabled
-async function loadCurrentSite() {
-  const tab = await getCurrentTab();
-  
-  if (tab && tab.url) {
-    currentHostname = getHostnameFromUrl(tab.url);
-    elements.currentSite.textContent = currentHostname || 'N/A';
-    
-    // Check if site is disabled
-    const result = await chrome.storage.local.get('disabledSites');
-    const disabledSites = result.disabledSites || [];
-    const isEnabled = !disabledSites.includes(currentHostname);
-    
-    elements.siteToggle.checked = isEnabled;
-  } else {
-    elements.currentSite.textContent = 'N/A';
-    elements.siteToggle.disabled = true;
-  }
-}
+$('siteToggle').addEventListener('change', async () => {
+  const { disabledSites = [] } = await chrome.storage.local.get('disabledSites');
+  const others = disabledSites.filter((site) => site !== hostname);
+  await chrome.storage.local.set({ disabledSites: $('siteToggle').checked ? others : [...others, hostname] });
+});
 
-// Load cursor configurations
-async function loadCursorConfig() {
-  const config = await chrome.storage.local.get(['cursorDefault', 'cursorInteractive']);
-  
-  if (config.cursorDefault) {
-    elements.cursorDefault.value = config.cursorDefault;
-  }
-  
-  if (config.cursorInteractive) {
-    elements.cursorInteractive.value = config.cursorInteractive;
-  }
-}
+$('newCursor').addEventListener('click', () => {
+  chrome.tabs.create({ url: chrome.runtime.getURL('options/options.html#new') });
+  window.close();
+});
+$('openSettings').addEventListener('click', () => {
+  chrome.runtime.openOptionsPage();
+  window.close();
+});
+$('manageExtension').addEventListener('click', openManagePage);
 
-// Toggle site enabled/disabled
-async function toggleSite() {
-  if (!currentHostname) return;
-  
-  const result = await chrome.storage.local.get('disabledSites');
-  let disabledSites = result.disabledSites || [];
-  
-  if (elements.siteToggle.checked) {
-    // Enable site - remove from disabled list
-    disabledSites = disabledSites.filter(site => site !== currentHostname);
-    showStatus(`Enabled on ${currentHostname}`);
-  } else {
-    // Disable site - add to disabled list
-    if (!disabledSites.includes(currentHostname)) {
-      disabledSites.push(currentHostname);
-    }
-    showStatus(`Disabled on ${currentHostname}`);
-  }
-  
-  await chrome.storage.local.set({ disabledSites });
-}
+// Shortcuts and Settings can change things while the popup is open.
+chrome.storage.onChanged.addListener(show);
 
-// Save cursor configurations
-async function saveCursorConfig() {
-  const cursorDefault = elements.cursorDefault.value.trim();
-  const cursorInteractive = elements.cursorInteractive.value.trim();
-  
-  if (!cursorDefault || !cursorInteractive) {
-    showStatus('Please fill in both cursor values', 'error');
-    return;
-  }
-  
-  await chrome.storage.local.set({
-    cursorDefault,
-    cursorInteractive
-  });
-  
-  showStatus('Settings saved successfully!');
-}
-
-// Reset to default values
-async function resetToDefaults() {
-  try {
-    const response = await chrome.runtime.sendMessage({ action: 'resetToDefaults' });
-    
-    if (response && response.success) {
-      // Reload the config to show updated values
-      await loadCursorConfig();
-      showStatus('Reset to defaults!');
-    }
-  } catch (error) {
-    showStatus('Failed to reset defaults', 'error');
-    console.error('Reset error:', error);
-  }
-}
-
-// Event Listeners
-elements.siteToggle.addEventListener('change', toggleSite);
-elements.saveBtn.addEventListener('click', saveCursorConfig);
-elements.resetBtn.addEventListener('click', resetToDefaults);
-
-// Initialize popup
 async function init() {
-  await loadCurrentSite();
-  await loadCursorConfig();
+  const [[tab], shortcuts] = await Promise.all([chrome.tabs.query({ active: true, currentWindow: true }), getShortcuts()]);
+  // No URL on pages Purrsor can't see.
+  if (/^(https?|file):/.test(tab?.url)) hostname = new URL(tab.url).hostname;
+  $('currentSite').textContent = hostname || 'Not available on this page';
+  const soundKeys = shortcuts['toggle-sound'];
+  $('soundDetail').textContent = soundKeys ? `Plays on every click · ${soundKeys}` : 'Plays on every click';
+  $('slapDetail').textContent = `${SLAP_KEYS.click} knocks things away · ${SLAP_KEYS.undo} undoes`;
+  await show();
 }
 
 init();

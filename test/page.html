@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Purrsor test page</title>
+  <style>
+    body { margin: 40px 120px; font: 16px system-ui, sans-serif; }
+    p, .chip { width: 260px; margin: 16px 0; }
+    .chip { cursor: pointer !important; }
+    iframe { width: 260px; height: 60px; border: 1px solid; }
+  </style>
+</head>
+<body>
+  <p id="text">Plain text</p>
+  <p><a id="link" href="frame.html">A link</a></p>
+  <p><button id="button">A button</button></p>
+  <div class="chip" id="chip">A div with the site's own !important cursor</div>
+  <open-widget></open-widget>
+  <closed-widget></closed-widget>
+  <iframe id="frame"></iframe>
+
+  <script>
+    for (const mode of ['open', 'closed']) {
+      customElements.define(`${mode}-widget`, class extends HTMLElement {
+        constructor() {
+          super();
+          const root = this.attachShadow({ mode });
+          root.innerHTML = '<style>button { cursor: pointer; }</style><button>A button in a shadow root</button>';
+          if (mode === 'closed') window.closedButton = root.querySelector('button');
+        }
+      });
+    }
+    // Another hostname makes the frame cross-origin.
+    document.getElementById('frame').src = `${location.origin.replace('127.0.0.1', 'localhost')}/frame.html`;
+  </script>
+</body>
+</html>

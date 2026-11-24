@@ -1,11 +1,12 @@
 {
   "manifest_version": 3,
   "name": "Purrsor",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Customize your cursor with adorable alternatives across all websites",
   "permissions": [
     "storage",
-    "activeTab"
+    "activeTab",
+    "scripting"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -16,6 +17,20 @@
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
+    }
+  },
+  "options_ui": {
+    "page": "options/options.html",
+    "open_in_tab": true
+  },
+  "commands": {
+    "toggle-enabled": {
+      "suggested_key": { "default": "Alt+Shift+P" },
+      "description": "Turn Purrsor on or off everywhere"
+    },
+    "toggle-sound": {
+      "suggested_key": { "default": "Alt+Shift+B" },
+      "description": "Turn the bongo sound on or off"
     }
   },
   "icons": {
@@ -29,14 +44,15 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content.js"],
+      "js": ["shared/sound.js", "slap.js", "content.js"],
       "run_at": "document_start",
-      "all_frames": true
+      "all_frames": true,
+      "match_origin_as_fallback": true
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["default.json"],
+      "resources": ["sounds/bongo.mp3"],
       "matches": ["<all_urls>"]
     }
   ]
