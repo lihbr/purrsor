@@ -10,7 +10,7 @@
 <body>
   <main class="page">
     <header class="page-head">
-      <img class="page-cat" id="headCat" alt="" width="84" height="57">
+      <img class="page-cat" src="../cursors/idle.png" alt="" width="84" height="57">
       <h1>Purrsor settings</h1>
     </header>
 
@@ -49,6 +49,16 @@
             <span class="switch-track"></span>
           </label>
         </div>
+        <div class="row">
+          <div class="row-text">
+            <label class="row-label" for="shrinkToggle">Shrink near edges</label>
+            <span class="row-detail" id="shrinkDetail">Chrome hides a big cursor near the window's edges. A smaller picture keeps the cat there.</span>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="shrinkToggle" aria-describedby="shrinkDetail" checked>
+            <span class="switch-track"></span>
+          </label>
+        </div>
       </div>
       <p class="note">
         Shortcuts live on your browser's own page.
@@ -79,8 +89,12 @@
             <textarea id="cssDefault" rows="3" spellcheck="false" required></textarea>
           </div>
           <div class="field">
-            <label for="cssInteractive">While the button is held</label>
+            <label for="cssInteractive">Over links and buttons</label>
             <textarea id="cssInteractive" rows="3" spellcheck="false" required></textarea>
+          </div>
+          <div class="field">
+            <label for="cssClick">While the button is held</label>
+            <textarea id="cssClick" rows="3" spellcheck="false" required></textarea>
           </div>
           <div class="form-actions">
             <span class="form-status" id="cssStatus" role="status"></span>
@@ -131,16 +145,24 @@
                   <input type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" class="visually-hidden" id="idleFile">
                 </label>
               </div>
-              <div class="upload" id="slapUpload">
+              <div class="upload" id="hoverUpload">
+                <div class="upload-art"><img alt="" hidden></div>
+                <span class="upload-label">Over links <span class="optional">optional</span></span>
+                <label class="button small upload-button">
+                  <span>Choose</span>
+                  <input type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" class="visually-hidden" id="hoverFile">
+                </label>
+              </div>
+              <div class="upload" id="clickUpload">
                 <div class="upload-art"><img alt="" hidden></div>
                 <span class="upload-label">On click <span class="optional">optional</span></span>
                 <label class="button small upload-button">
                   <span>Choose</span>
-                  <input type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" class="visually-hidden" id="slapFile">
+                  <input type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" class="visually-hidden" id="clickFile">
                 </label>
               </div>
             </div>
-            <p class="hint" id="picturesHint">PNG with a transparent background works best. Use two pictures the same size so they line up.</p>
+            <p class="hint" id="picturesHint">PNG with a transparent background works best. Use pictures the same size so they line up.</p>
           </fieldset>
 
           <fieldset class="field">
@@ -197,6 +219,7 @@
   </dialog>
 
   <script src="../shared/templates.js"></script>
+  <script src="../shared/sound.js"></script>
   <script src="../shared/pages.js"></script>
   <script src="files.js"></script>
   <script src="options.js"></script>

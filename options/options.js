@@ -1,66 +1,46 @@
 // Purrsor - Settings page
 
-const $ = (id) => document.getElementById(id);
 const local = chrome.storage.local;
+const PICTURES = ['idle', 'hover', 'click'];
+const CSS_FIELDS = { cssDefault: 'cursorDefault', cssInteractive: 'cursorInteractive', cssClick: 'cursorClick' };
 
-// Switches and shortcuts
+const editor = $('editor');
+const tryPad = $('tryPad');
+let draft;
+let tryCursors = { idle: '', click: '' };
 
-async function showSwitches() {
-  const { enabled, soundEnabled, slapEnabled } = await getSwitches();
-  $('enabledToggle').checked = enabled;
-  $('soundToggle').checked = soundEnabled;
-  $('slapToggle').checked = slapEnabled;
-  $('enabledDetail').textContent = enabled
-    ? "On for every site you haven't turned it off for"
-    : 'Off everywhere. No cursor and no sound.';
+function actionButton(text, label, onClick, className = 'text-button') {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = className;
+  button.textContent = text;
+  button.setAttribute('aria-label', label);
+  button.addEventListener('click', onClick);
+  return button;
 }
-
-async function showShortcuts() {
-  const shortcuts = await getShortcuts();
-  for (const [id, command] of [['enabledKeys', 'toggle-enabled'], ['soundKeys', 'toggle-sound']]) {
-    const keys = shortcuts[command];
-    $(id).textContent = keys || 'No shortcut';
-    $(id).classList.toggle('unset', !keys);
-  }
-}
-
-$('enabledToggle').addEventListener('change', (event) => local.set({ enabled: event.target.checked }));
-$('soundToggle').addEventListener('change', (event) => local.set({ soundEnabled: event.target.checked }));
-$('slapToggle').addEventListener('change', (event) => local.set({ slapEnabled: event.target.checked }));
-$('slapDetail').textContent = `${SLAP_KEYS.click} knocks the things around the cat out of the way, and ${SLAP_KEYS.undo} puts back the last slap. `
-  + `While it's on, ${SLAP_KEYS.click} doesn't download links.`;
-$('changeShortcuts').addEventListener('click', openShortcutsPage);
-$('manageExtension').addEventListener('click', openManagePage);
-
-// Back from the browser's shortcuts page: show the new keys.
-document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) showShortcuts();
-});
-
-// Cursors
-
-let templates = [];
 
 function soundDetail(template) {
   if (template.builtin) return 'Built in, with the bongo';
   if (template.id === CUSTOM_CSS_ID) return 'Your CSS, with the bongo';
-  return template.sound ? `Plays ${template.sound.name}` : 'Plays the bongo';
+  return template.sound ? `Plays ${template.sound}` : 'Plays the bongo';
 }
 
-async function showGallery() {
-  const [list, { templateId = BUILTIN_ID }] = await Promise.all([listTemplates(), local.get('templateId')]);
-  templates = list;
-  const current = list.find((template) => template.id === templateId) || list[0];
-  $('headCat').src = list[0].idle;
+async function show() {
+  const [templates, { templateId = BUILTIN.id, disabledSites = [] }] = await Promise.all([
+    listTemplates(),
+    local.get(['templateId', 'disabledSites']),
+    showSwitches(),
+  ]);
+  $('enabledDetail').textContent = $('enabledToggle').checked
+    ? "On for every site you haven't turned it off for"
+    : 'Off everywhere. No cursor and no sound.';
 
-  const cards = list.map((template) => {
+  const cards = templates.map((template) => {
     const card = $('cardTemplate').content.firstElementChild.cloneNode(true);
-    const inUse = template.id === current.id;
+    const inUse = template.id === templateId;
     card.classList.toggle('in-use', inUse);
-    const image = card.querySelector('img');
-    image.hidden = !template.idle;
-    if (template.idle) image.src = template.idle;
     card.querySelector('.card-art').classList.toggle('no-picture', !template.idle);
+    card.querySelector('img').src = template.idle;
     card.querySelector('.card-name').textContent = template.name;
     card.querySelector('.card-detail').textContent = soundDetail(template);
 
@@ -80,49 +60,43 @@ async function showGallery() {
     }
     return card;
   });
-
   const add = document.createElement('button');
   add.type = 'button';
   add.className = 'card card-new';
   add.innerHTML = '<span class="card-new-plus" aria-hidden="true">+</span><span>New cursor</span>';
   add.addEventListener('click', () => openEditor());
   $('gallery').replaceChildren(...cards, add);
-}
 
-function actionButton(text, label, onClick, className = 'text-button') {
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.className = className;
-  button.textContent = text;
-  if (label !== text) button.setAttribute('aria-label', label);
-  button.addEventListener('click', onClick);
-  return button;
-}
-
-// Sites Purrsor is turned off on
-
-async function showSites() {
-  const { disabledSites = [] } = await local.get('disabledSites');
   $('sitesEmpty').hidden = disabledSites.length > 0;
   $('sites').replaceChildren(...disabledSites.map((site) => {
     const item = document.createElement('li');
     const name = document.createElement('span');
     name.textContent = site;
-    item.append(name, actionButton('Turn on', `Turn Purrsor on for ${site}`, async () => {
-      const { disabledSites: sites = [] } = await local.get('disabledSites');
-      await local.set({ disabledSites: sites.filter((other) => other !== site) });
+    item.append(name, actionButton('Turn on', `Turn Purrsor on for ${site}`, () => {
+      local.set({ disabledSites: disabledSites.filter((other) => other !== site) });
     }, 'button small'));
     return item;
   }));
 }
 
-// Cursor CSS
-
-async function fillCssForm() {
-  const { customCursor, cursorDefault = '', cursorInteractive = '' } = await local.get(['customCursor', 'cursorDefault', 'cursorInteractive']);
-  $('cssDefault').value = customCursor?.cursorDefault ?? cursorDefault;
-  $('cssInteractive').value = customCursor?.cursorInteractive ?? cursorInteractive;
+async function showShortcuts() {
+  const shortcuts = await getShortcuts();
+  for (const [id, command] of [['enabledKeys', 'toggle-enabled'], ['soundKeys', 'toggle-sound']]) {
+    $(id).textContent = shortcuts[command] || 'No shortcut';
+    $(id).classList.toggle('unset', !shortcuts[command]);
+  }
 }
+
+$('slapDetail').textContent = `${SLAP_KEYS.click} knocks the things around the cat out of the way, and ${SLAP_KEYS.undo} puts back the last slap. `
+  + `While it's on, ${SLAP_KEYS.click} doesn't download links.`;
+// Extensions can read their shortcuts but not set them.
+$('changeShortcuts').addEventListener('click', () => chrome.tabs.create({ url: 'chrome://extensions/shortcuts' }));
+$('manageExtension').addEventListener('click', openManagePage);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) showShortcuts();
+});
+
+// Cursor CSS
 
 function openCssEditor() {
   const details = document.querySelector('.advanced');
@@ -133,10 +107,7 @@ function openCssEditor() {
 
 $('cssForm').addEventListener('submit', async (event) => {
   event.preventDefault();
-  const customCursor = {
-    cursorDefault: $('cssDefault').value.trim(),
-    cursorInteractive: $('cssInteractive').value.trim(),
-  };
+  const customCursor = Object.fromEntries(Object.entries(CSS_FIELDS).map(([id, key]) => [key, $(id).value.trim()]));
   await local.set({ customCursor });
   await useTemplate({ id: CUSTOM_CSS_ID, ...customCursor });
   $('cssStatus').textContent = 'Saved. Pages use it now.';
@@ -144,15 +115,10 @@ $('cssForm').addEventListener('submit', async (event) => {
 
 // The cursor editor
 
-const editor = $('editor');
-let draft;
-let tryCursors = { idle: '', slap: '' };
-let previewAudio;
-
 function openEditor(template) {
   draft = template
-    ? { ...template, hotspot: { ...template.hotspot }, sound: template.sound ? 'keep' : null, soundName: template.sound?.name }
-    : { name: '', idle: '', slap: '', hotspot: { x: 0.5, y: 0.5 }, size: MAX_CURSOR_SIZE, sound: null };
+    ? { ...template }
+    : { name: '', idle: '', hover: '', click: '', hotspot: { x: 0.5, y: 0.5 }, size: MAX_CURSOR_SIZE, sound: null };
   $('editorTitle').textContent = template ? `Edit ${template.name}` : 'New cursor';
   $('saveTemplate').textContent = template ? 'Save changes' : 'Save and use';
   $('deleteTemplate').hidden = !template;
@@ -174,18 +140,15 @@ function showError(message) {
   $('editorError').textContent = message;
 }
 
-function showUpload(id, src) {
-  const image = $(id).querySelector('img');
-  image.hidden = !src;
-  if (src) image.src = src;
-  $(id).querySelector('.upload-button span').textContent = src ? 'Replace' : 'Choose';
-}
-
 function showDraft() {
-  showUpload('idleUpload', draft.idle);
-  showUpload('slapUpload', draft.slap);
-  $('soundName').textContent = draft.sound === null ? 'Bongo' : draft.soundName;
-  $('soundRemove').hidden = draft.sound === null;
+  for (const picture of PICTURES) {
+    const upload = $(`${picture}Upload`);
+    upload.querySelector('img').hidden = !draft[picture];
+    upload.querySelector('img').src = draft[picture] || '';
+    upload.querySelector('.upload-button span').textContent = draft[picture] ? 'Replace' : 'Choose';
+  }
+  $('soundName').textContent = draft.sound ?? 'Bongo';
+  $('soundRemove').hidden = !draft.sound;
   showHotspot();
   updateTryCursors();
 }
@@ -205,29 +168,21 @@ async function showHotspot() {
   }
   $('hotspotMark').style.left = `${draft.hotspot.x * 100}%`;
   $('hotspotMark').style.top = `${draft.hotspot.y * 100}%`;
-  // In the pixels of the cursor at the chosen size.
   const scale = Math.min(1, draft.size / Math.max(image.naturalWidth, image.naturalHeight));
   const x = Math.round(draft.hotspot.x * image.naturalWidth * scale);
   const y = Math.round(draft.hotspot.y * image.naturalHeight * scale);
   $('hotspotReadout').textContent = `Now ${x}, ${y} px from the top left.`;
 }
 
-// The try pad wears the draft cursor. Rebuilding it takes a moment, so only
-// the latest edit's result is kept.
+// Drawing takes a moment, so only the latest edit's result is kept.
 let tryVersion = 0;
 async function updateTryCursors() {
   const version = ++tryVersion;
-  if (!draft.idle) {
-    tryCursors = { idle: '', slap: '' };
-  } else {
-    const [idle, slap] = await Promise.all([
-      cursorValue(draft.idle, draft.hotspot, draft.size),
-      cursorValue(draft.slap || draft.idle, draft.hotspot, draft.size),
-    ]);
-    if (version !== tryVersion) return;
-    tryCursors = { idle, slap };
-  }
-  $('tryPad').style.cursor = tryCursors.idle;
+  const draw = (picture) => (picture ? cursorValue(picture, draft, true) : '');
+  const [idle, click] = await Promise.all([draw(draft.idle), draw(draft.click || draft.hover || draft.idle)]);
+  if (version !== tryVersion) return;
+  tryCursors = { idle, click };
+  tryPad.style.cursor = idle;
 }
 
 async function chooseFile(input, read, apply) {
@@ -244,45 +199,40 @@ async function chooseFile(input, read, apply) {
   }
 }
 
-$('idleFile').addEventListener('change', (event) => chooseFile(event.target, readPicture, (src, file) => {
-  draft.idle = src;
-  if (!$('nameInput').value.trim()) $('nameInput').value = file.name.replace(/\.[^.]+$/, '').slice(0, 40);
-}));
-$('slapFile').addEventListener('change', (event) => chooseFile(event.target, readPicture, (src) => {
-  draft.slap = src;
-}));
-$('soundFile').addEventListener('change', (event) => chooseFile(event.target, readSound, (sound) => {
-  draft.sound = sound;
-  draft.soundName = sound.name;
+for (const picture of PICTURES) {
+  $(`${picture}File`).addEventListener('change', (event) => chooseFile(event.target, readPicture, (src, file) => {
+    draft[picture] = src;
+    if (picture === 'idle' && !$('nameInput').value.trim()) $('nameInput').value = file.name.replace(/\.[^.]+$/, '').slice(0, 40);
+  }));
+}
+$('soundFile').addEventListener('change', (event) => chooseFile(event.target, readSound, (sound, file) => {
+  draft.newSound = sound;
+  draft.sound = file.name;
 }));
 $('soundRemove').addEventListener('click', () => {
+  draft.newSound = undefined;
   draft.sound = null;
   showDraft();
 });
 
 $('sizeChoice').addEventListener('change', (event) => {
   draft.size = Number(event.target.value);
-  showHotspot();
-  updateTryCursors();
+  showDraft();
 });
 
-// Click point: click the picture, or nudge with the arrow keys.
-const hotspot = $('hotspot');
-const clamp01 = (value) => Math.min(1, Math.max(0, value));
-
 function setHotspot(x, y) {
-  draft.hotspot = { x: clamp01(x), y: clamp01(y) };
-  showHotspot();
-  updateTryCursors();
+  const clamp = (value) => Math.min(1, Math.max(0, value));
+  draft.hotspot = { x: clamp(x), y: clamp(y) };
+  showDraft();
 }
 
-hotspot.addEventListener('pointerdown', (event) => {
+$('hotspot').addEventListener('pointerdown', (event) => {
   if (!draft.idle) return;
   const box = $('hotspotImage').getBoundingClientRect();
   setHotspot((event.clientX - box.left) / box.width, (event.clientY - box.top) / box.height);
 });
 
-hotspot.addEventListener('keydown', (event) => {
+$('hotspot').addEventListener('keydown', (event) => {
   const moves = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
   const move = moves[event.key];
   if (!move || !draft.idle) return;
@@ -295,24 +245,14 @@ hotspot.addEventListener('keydown', (event) => {
   );
 });
 
-// Pressing in the try pad shows the click picture and plays the sound.
-async function playDraftSound() {
-  if (draft.sound && draft.sound !== 'keep') {
-    previewAudio ??= new AudioContext();
-    const data = Uint8Array.from(atob(draft.sound.data), (c) => c.charCodeAt(0)).buffer;
-    const source = previewAudio.createBufferSource();
-    source.buffer = await previewAudio.decodeAudioData(data);
-    source.connect(previewAudio.destination);
-    source.start();
-  } else {
-    playTemplateSound(draft.sound === 'keep' ? draft.id : BUILTIN_ID);
-  }
+function playDraftSound() {
+  if (draft.newSound) decodeSound(draft.newSound).then(playBuffer);
+  else playSound(draft.sound ? draft.id : BUILTIN.id);
 }
 
-const tryPad = $('tryPad');
 tryPad.addEventListener('pointerdown', (event) => {
   if (event.button !== 0 || !tryCursors.idle) return;
-  tryPad.style.cursor = tryCursors.slap;
+  tryPad.style.cursor = tryCursors.click;
   tryPad.classList.add('pressed');
   playDraftSound();
 });
@@ -340,17 +280,14 @@ $('deleteTemplate').addEventListener('click', async () => {
     deleteTimer = setTimeout(resetDelete, 4000);
     return;
   }
-  const { templates: saved = [], templateId } = await local.get(['templates', 'templateId']);
-  await local.set({ templates: saved.filter((template) => template.id !== draft.id) });
+  const { templates = [], templateId } = await local.get(['templates', 'templateId']);
+  await local.set({ templates: templates.filter((template) => template.id !== draft.id) });
   await local.remove(`sound:${draft.id}`);
-  if (templateId === draft.id) await useTemplate(await loadBuiltinTemplate());
+  if (templateId === draft.id) await useTemplate(BUILTIN);
   closeEditor();
 });
 
 $('editorClose').addEventListener('click', closeEditor);
-editor.addEventListener('close', () => {
-  tryPad.style.cursor = '';
-});
 
 $('editorForm').addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -363,31 +300,15 @@ $('editorForm').addEventListener('submit', async (event) => {
 
   $('saveTemplate').disabled = true;
   try {
-    const id = draft.id ?? crypto.randomUUID();
-    const [cursorDefault, cursorInteractive] = await Promise.all([
-      cursorValue(draft.idle, draft.hotspot, draft.size),
-      cursorValue(draft.slap || draft.idle, draft.hotspot, draft.size),
-    ]);
-    const soundName = draft.sound === null ? null : draft.soundName;
-    const template = {
-      id,
-      name,
-      idle: draft.idle,
-      slap: draft.slap,
-      hotspot: draft.hotspot,
-      size: draft.size,
-      sound: soundName ? { name: soundName } : null,
-      cursorDefault,
-      cursorInteractive,
-    };
-
-    const { templates: saved = [], templateId } = await local.get(['templates', 'templateId']);
-    const isNew = !saved.some((other) => other.id === id);
-    const writes = { templates: isNew ? [...saved, template] : saved.map((other) => (other.id === id ? template : other)) };
-    if (draft.sound && draft.sound !== 'keep') writes[`sound:${id}`] = draft.sound;
+    const { newSound, ...rest } = draft;
+    const template = { ...rest, name, id: draft.id ?? crypto.randomUUID() };
+    const { templates = [], templateId } = await local.get(['templates', 'templateId']);
+    const isNew = !templates.some((other) => other.id === template.id);
+    const writes = { templates: isNew ? [...templates, template] : templates.map((other) => (other.id === template.id ? template : other)) };
+    if (newSound) writes[`sound:${template.id}`] = newSound;
     await local.set(writes);
-    if (draft.sound === null) await local.remove(`sound:${id}`);
-    if (isNew || templateId === id) await useTemplate(template);
+    if (!template.sound) await local.remove(`sound:${template.id}`);
+    if (isNew || templateId === template.id) await useTemplate(template);
     closeEditor();
   } catch (error) {
     // chrome.storage.local holds 10 MB in all.
@@ -398,19 +319,13 @@ $('editorForm').addEventListener('submit', async (event) => {
   }
 });
 
-// Keep up with the popup, shortcuts and other Settings tabs.
-chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName !== 'local') return;
-  if (changes.enabled || changes.soundEnabled || changes.slapEnabled) showSwitches();
-  if (changes.templates || changes.templateId || changes.customCursor) showGallery();
-  if (changes.disabledSites) showSites();
-  for (const key of Object.keys(changes)) {
-    if (key.startsWith('sound:')) forgetTemplateSound(key.slice('sound:'.length));
-  }
-});
+// The popup, shortcuts and other Settings tabs can change things.
+chrome.storage.onChanged.addListener(show);
 
 async function init() {
-  await Promise.all([showSwitches(), showShortcuts(), showGallery(), showSites(), fillCssForm()]);
+  const stored = await local.get(['customCursor', ...Object.values(CSS_FIELDS)]);
+  for (const [id, key] of Object.entries(CSS_FIELDS)) $(id).value = (stored.customCursor ?? stored)[key] ?? '';
+  await Promise.all([show(), showShortcuts()]);
   if (location.hash === '#new') openEditor();
 }
 

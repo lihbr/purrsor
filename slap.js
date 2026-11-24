@@ -1,11 +1,7 @@
 // Purrsor - the slap. An Option-click (Alt-click) sends a shockwave out from
-// the pointer: two spinning stars, a punch ring, ripples that roll across the
-// window, and focus lines. Each ripple kicks what it passes. Nothing is
-// removed: Option-Z eases the last slap's pushes back, and a reload restores
-// the page. Loaded before content.js, which decides when to slap.
-//
-// Choosing what a slap moves (findTargets) is separate from the hit itself
-// (quake), so either can change on its own.
+// the pointer, and each ripple kicks what it passes. Nothing is removed:
+// Option-Z eases the last slap's pushes back, and a reload restores the page.
+// Loaded before content.js, which decides when to slap.
 
 const Slap = (() => {
   // Tuned by hand in a side-by-side picker.
@@ -45,7 +41,6 @@ const Slap = (() => {
   const ATOMIC_INLINE = new Set(['img', 'svg', 'video', 'canvas', 'iframe', 'embed', 'object', 'input', 'select', 'textarea', 'button']);
   const CONTROLS = 'a[href], button, input, select, textarea, summary, [role="button"]';
 
-  // An eight-point burst, as a clip-path.
   const STAR = `polygon(${Array.from({ length: 16 }, (_, i) => {
     const angle = (i / 16) * 2 * Math.PI - Math.PI / 2;
     const radius = i % 2 ? 22 : 50;
@@ -74,11 +69,13 @@ const Slap = (() => {
 
   let overlay; // { host, fx }
 
-  // Each slap's pushes, newest last, so Option-Z can take back one slap at a
-  // time. Slaps past the limit fold into one held offset per element.
+  const NONE = { x: 0, y: 0, angle: 0 };
+  // Each slap's pushes, newest last, so Option-Z can take back one at a time.
   const UNDO_LIMIT = 20;
-  const slaps = []; // [[{ element, animations, x, y, angle }]]
-  const holds = new Map(); // Element → { animations, x, y, angle }
+  const slaps = []; // [[{ element, x, y, angle, kicks }]]
+  // How far slaps have pushed each element in all, how much of that has
+  // settled, and the one animation that holds the settled part.
+  const moved = new Map(); // Element → { x, y, angle, settled, held }
 
   // The effects draw in a closed shadow root over the page, where the page's
   // styles can't reach and pointer events pass through.
@@ -106,7 +103,6 @@ const Slap = (() => {
     return part;
   }
 
-  // Rings that grow from the pointer, each its own size, delay and length.
   function rings(hit, count, { kind, size, delay, duration, easing, from, holdUntil }) {
     const animations = [];
     for (let i = 0; i < count; i++) {
@@ -120,7 +116,6 @@ const Slap = (() => {
     return animations;
   }
 
-  // A negative of the page around the pointer, cut off rather than faded.
   function flash(fx, x, y) {
     const negative = addPart(fx, 'negative');
     fx.prepend(negative);
@@ -129,7 +124,6 @@ const Slap = (() => {
     animation.finished.then(() => negative.remove(), () => negative.remove());
   }
 
-  // Ink wedges converging on the pointer, like a manga impact panel.
   function focusLines(fx, x, y) {
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('class', 'focus');
@@ -160,8 +154,6 @@ const Slap = (() => {
   // photosensitive flash limit.
   let lastFlash = 0;
 
-  // Two spinning stars (ink behind, pad pink in front), a punch ring, the
-  // ripples and speed lines.
   function impact(fx, hit, x, y) {
     const now = performance.now();
     if (now - lastFlash > 500) {
@@ -247,7 +239,6 @@ const Slap = (() => {
     return element;
   }
 
-  // Hit-tests rings of points around the click and keeps what's on top at each.
   function findTargets(x, y) {
     const seen = new Map(); // what each hit element resolves to, this slap
     const found = new Set();
@@ -299,63 +290,57 @@ const Slap = (() => {
     return { translate: `${x}px ${y}px`, rotate: `${angle}deg` };
   }
 
-  // Our running animations, so an element is only measured at rest.
-  const ours = new WeakSet();
-
-  function total(element) {
-    const sum = { x: 0, y: 0, angle: 0 };
-    const add = (push) => {
-      sum.x += push.x;
-      sum.y += push.y;
-      sum.angle += push.angle;
-    };
-    if (holds.has(element)) add(holds.get(element));
-    for (const slap of slaps) {
-      for (const push of slap) if (push.element === element) add(push);
-    }
-    return sum;
+  function plus(a, b, sign = 1) {
+    return { x: a.x + sign * b.x, y: a.y + sign * b.y, angle: a.angle + sign * b.angle };
   }
 
-  // Where each element was last seen at rest, in page coordinates, with the
-  // pushes it had then. A rect measured mid-flight would let quick slaps add
-  // up past the page's edge.
-  const homes = new WeakMap();
+  function hold(element, state) {
+    state.held?.cancel();
+    state.held = element.animate([offset(state.settled), offset(state.settled)], { duration: 1, fill: 'forwards', composite: 'add' });
+    state.held.finish();
+    state.held.persist();
+  }
 
-  function resting(element, rect) {
-    const now = total(element);
-    let home = homes.get(element);
-    const moving = element.getAnimations().some((animation) => ours.has(animation) && animation.playState === 'running');
-    if (!home || !moving) {
-      home = { right: rect.right + scrollX, bottom: rect.bottom + scrollY, ...now };
-      homes.set(element, home);
-    }
-    return { right: home.right + now.x - home.x, bottom: home.bottom + now.y - home.y, angle: now.angle, homeAngle: home.angle };
+  function easeBack(element, push) {
+    if (!element.isConnected || reducedMotion.matches) return;
+    element.animate([offset(push), offset(NONE)], {
+      duration: 320,
+      delay: Math.random() * 60,
+      easing: EASE_IN_OUT,
+      composite: 'add',
+      fill: 'backwards',
+    });
   }
 
   // How much of a slap's push and spin an element can take without widening
   // or lengthening the page: a box pushed past the scrollable area grows it.
   // Leaving by the top or left is fine, since those don't scroll.
-  function keepInside(element, rect, push, firstSpin) {
+  function keepInside(element, rect, state, push, firstSpin) {
     const page = document.scrollingElement || document.documentElement;
-    const rest = resting(element, rect);
-    const roomRight = page.scrollWidth - rest.right - EDGE;
-    const roomBelow = page.scrollHeight - rest.bottom - EDGE;
-    // The extra width and height a new angle adds to the box's outline.
+    // The computed translate holds the pushes so far, even mid-flight, and a
+    // spin leaves the centre in place, so this is where the box comes to rest.
+    const [flownX = 0, flownY = 0] = getComputedStyle(element).translate.split(' ').map((length) => parseFloat(length) || 0);
+    const roomRight = page.scrollWidth - (rect.left + rect.width / 2 + scrollX - flownX + state.x);
+    const roomBelow = page.scrollHeight - (rect.top + rect.height / 2 + scrollY - flownY + state.y);
     const width = element.offsetWidth ?? rect.width;
     const height = element.offsetHeight ?? rect.height;
-    const outline = (degrees) => {
+    const half = (degrees) => {
       const radians = (degrees * Math.PI) / 180;
       const cos = Math.abs(Math.cos(radians));
       const sin = Math.abs(Math.sin(radians));
-      return [width * cos + height * sin, width * sin + height * cos];
+      return [(width * cos + height * sin) / 2, (width * sin + height * cos) / 2];
     };
-    const [w0, h0] = outline(rest.homeAngle);
-    const [w1, h1] = outline(rest.angle + firstSpin * SPIN_OVERSHOOT);
-    let [growX, growY] = [(w1 - w0) / 2, (h1 - h0) / 2];
-    const spin = growX <= roomRight && growY <= roomBelow;
-    if (!spin) [growX, growY] = [0, 0];
+    const [restingWidth, restingHeight] = half(state.angle);
+    let [halfWidth, halfHeight] = half(state.angle + firstSpin * SPIN_OVERSHOOT);
+    const spin = halfWidth <= roomRight - EDGE && halfHeight <= roomBelow - EDGE;
+    if (!spin) [halfWidth, halfHeight] = [restingWidth, restingHeight];
     const share = (wanted, room) => (wanted > 0 ? Math.min(1, Math.max(0, room) / (wanted * OVERSHOOT)) : 1);
-    return { x: share(push.x, roomRight - growX), y: share(push.y, roomBelow - growY), spin: spin ? 1 : 0, roomRight: page.scrollWidth - rest.right };
+    return {
+      x: share(push.x, roomRight - EDGE - halfWidth),
+      y: share(push.y, roomBelow - EDGE - halfHeight),
+      spin: spin ? 1 : 0,
+      shake: Math.min(SHAKE, roomRight - restingWidth - 1),
+    };
   }
 
   // Shakes the effects and what the slap hit, not the page itself: a
@@ -364,81 +349,55 @@ const Slap = (() => {
   function shake(element, amount) {
     if (amount <= 0) return;
     const frames = SHAKE_STEPS.map((step, i) => ({ translate: `${(step * amount).toFixed(1)}px ${((i % 2 ? 0.4 : -0.3) * step * amount).toFixed(1)}px` }));
-    ours.add(element.animate(frames, { duration: 460, composite: 'add' }));
+    element.animate(frames, { duration: 460, composite: 'add' });
   }
 
-  function hold(element, push) {
-    const animation = element.animate([offset(push), offset(push)], { duration: 1, fill: 'forwards', composite: 'add' });
-    animation.finish();
-    animation.persist();
-    return animation;
-  }
-
-  function stop(push) {
-    for (const animation of push.animations) animation.cancel();
-    push.animations = [];
-  }
-
-  // Each ripple kicks what it passes: three kicks per element, each smaller
-  // than the last, starting as the wave gets there. Once they settle, one
-  // held offset takes their place.
   function quake(fx, x, y) {
-    const targets = findTargets(x, y);
-    const plans = targets.map((target) => {
+    // Everything is measured before anything moves.
+    const plans = findTargets(x, y).map((target) => {
       const { element, rect, strength, light, direction, sign } = target;
+      if (!moved.has(element)) moved.set(element, { ...NONE, settled: NONE });
+      const state = moved.get(element);
       const force = PUSH * (0.4 + 0.6 * strength) * (0.6 + 0.4 * light);
       const firstSpin = sign * SPIN * (0.3 + 0.7 * strength) * light;
       const shares = Array.from({ length: KICKS }, (_, k) => KICK_SHARE ** k);
       const sum = shares.reduce((a, b) => a + b);
       const push = { x: Math.cos(direction) * force * sum, y: Math.sin(direction) * force * sum };
-      return { target, force, firstSpin, shares, fit: keepInside(element, rect, push, firstSpin) };
+      return { target, state, force, firstSpin, shares, fit: keepInside(element, rect, state, push, firstSpin) };
     });
     shake(fx, SHAKE);
-    for (const { target, fit } of plans) shake(target.element, Math.min(SHAKE, fit.roomRight - 1));
-    return plans.map(({ target, force, firstSpin, shares, fit }) => {
+    for (const { target, fit } of plans) shake(target.element, fit.shake);
+    return plans.map(({ target, state, force, firstSpin, shares, fit }) => {
       const { element, distance, direction } = target;
-      const push = { element, animations: [], x: 0, y: 0, angle: 0 };
-      shares.forEach((share, k) => {
+      const push = { element, ...NONE };
+      push.kicks = shares.map((share, k) => {
         const kick = {
           x: Math.cos(direction) * force * share * fit.x,
           y: Math.sin(direction) * force * share * fit.y,
           angle: firstSpin * SPIN_SHARE ** k * fit.spin,
         };
+        Object.assign(push, plus(push, kick));
         const animation = element.animate([
-          { ...offset({ x: 0, y: 0, angle: 0 }), easing: EASE_OUT },
+          { ...offset(NONE), easing: EASE_OUT },
           { ...offset({ x: kick.x * OVERSHOOT, y: kick.y * OVERSHOOT, angle: kick.angle * SPIN_OVERSHOOT }), offset: 0.4, easing: EASE_IN_OUT },
           offset(kick),
         ], { duration: 380, delay: TRAVEL * 0.6 * (distance / RADIUS) + GAP * k, fill: 'forwards', composite: 'add' });
         // Filled animations on the same property would otherwise replace each other.
         animation.persist();
-        ours.add(animation);
-        push.animations.push(animation);
-        push.x += kick.x;
-        push.y += kick.y;
-        push.angle += kick.angle;
+        return animation;
       });
-      const kicks = push.animations;
-      Promise.all(kicks.map((animation) => animation.finished)).then(() => {
-        if (push.animations !== kicks) return;
-        push.animations = [hold(element, push)];
-        for (const animation of kicks) animation.cancel();
+      Object.assign(state, plus(state, push));
+      // Once the kicks settle, the element's one held offset takes their place.
+      Promise.all(push.kicks.map((kick) => kick.finished)).then(() => {
+        state.settled = plus(state.settled, push);
+        hold(element, state);
+        for (const kick of push.kicks) kick.cancel();
+        push.kicks = [];
       }, () => {});
       return push;
     });
   }
 
-  // Past the undo limit, the oldest slap's pushes stay for good.
-  function foldOldest() {
-    for (const push of slaps.shift()) {
-      const held = holds.get(push.element);
-      const sum = { x: push.x + (held?.x ?? 0), y: push.y + (held?.y ?? 0), angle: push.angle + (held?.angle ?? 0) };
-      if (held) stop(held);
-      stop(push);
-      holds.set(push.element, { animations: [hold(push.element, sum)], ...sum });
-    }
-  }
-
-  // Returns whether the slap moved anything, which Option-Z could take back.
   function at(x, y) {
     const { fx } = getOverlay();
     const hit = addPart(fx, 'hit');
@@ -447,38 +406,39 @@ const Slap = (() => {
     const calm = reducedMotion.matches;
     const animations = calm ? calmBurst(hit) : impact(fx, hit, x, y);
     Promise.allSettled(animations.map((animation) => animation.finished)).then(() => hit.remove());
-    if (calm) return false;
+    if (calm) return;
     const pushes = quake(fx, x, y);
-    if (!pushes.length) return false;
-    slaps.push(pushes);
-    if (slaps.length > UNDO_LIMIT) foldOldest();
-    return true;
+    if (pushes.length) slaps.push(pushes);
+    // The oldest slap's pushes then stay until everything is restored.
+    if (slaps.length > UNDO_LIMIT) slaps.shift();
   }
 
   function takeBack(push) {
-    stop(push);
     const { element } = push;
-    if (!element.isConnected || reducedMotion.matches) return;
-    ours.add(element.animate([offset(push), offset({ x: 0, y: 0, angle: 0 })], {
-      duration: 320,
-      delay: Math.random() * 60,
-      easing: EASE_IN_OUT,
-      composite: 'add',
-      fill: 'backwards',
-    }));
+    const state = moved.get(element);
+    Object.assign(state, plus(state, push, -1));
+    if (push.kicks.length) {
+      for (const kick of push.kicks) kick.cancel();
+    } else {
+      state.settled = plus(state.settled, push, -1);
+      hold(element, state);
+    }
+    easeBack(element, push);
   }
 
-  // Eases the last slap's pushes back. Returns false when there was none.
   function undo() {
-    const last = slaps.pop();
-    last?.forEach(takeBack);
-    return Boolean(last);
+    slaps.pop()?.forEach(takeBack);
   }
 
   function restoreAll() {
-    for (const slap of slaps.splice(0)) slap.forEach(takeBack);
-    for (const [element, held] of holds) takeBack({ element, ...held });
-    holds.clear();
+    for (const push of slaps.splice(0).flat()) {
+      for (const kick of push.kicks) kick.cancel();
+    }
+    for (const [element, state] of moved) {
+      state.held?.cancel();
+      easeBack(element, state.settled);
+    }
+    moved.clear();
   }
 
   return { at, undo, restoreAll };

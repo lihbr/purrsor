@@ -232,10 +232,6 @@ body {
   font-size: 18px;
 }
 
-.tile-art img[hidden] {
-  display: none;
-}
-
 .tile-new {
   color: var(--ink-soft);
   background: transparent;
@@ -254,6 +250,7 @@ body {
   font-size: 12px;
 }
 
+.tile-art.no-picture img,
 .stage.no-picture .stage-cat img {
   display: none;
 }

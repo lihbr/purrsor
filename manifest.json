@@ -44,7 +44,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["slap.js", "content.js"],
+      "js": ["shared/sound.js", "slap.js", "content.js"],
       "run_at": "document_start",
       "all_frames": true,
       "match_origin_as_fallback": true
@@ -52,7 +52,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["default.json", "sounds/bongo.mp3"],
+      "resources": ["sounds/bongo.mp3"],
       "matches": ["<all_urls>"]
     }
   ]
