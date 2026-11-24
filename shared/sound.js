@@ -18,6 +18,9 @@ function playBuffer(buffer) {
 }
 
 async function loadSound(templateId) {
+  // Making an AudioContext freezes the page for over 100ms. Chromium changes
+  // the cursor 20ms after a press, so the cat gets its paws down first.
+  await new Promise((resolve) => setTimeout(resolve, 50));
   const key = `sound:${templateId}`;
   const { [key]: own } = await chrome.storage.local.get(key);
   if (own) return decodeSound(own);
